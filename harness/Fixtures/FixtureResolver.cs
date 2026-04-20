@@ -11,16 +11,17 @@ namespace WinttyBench.Fixtures;
 // All relative paths (FixturePath, script paths) are resolved against the
 // repo root. The resolver locates the repo root by walking up from
 // AppContext.BaseDirectory until it finds a directory containing
-// `scripts/fixtures`, then sets Environment.CurrentDirectory to it so
-// that Path.GetFullPath("...") in callers agrees with paths returned here.
+// `scripts/fixtures`. Paths are resolved via Path.Combine(_repoRoot, ...)
+// so Environment.CurrentDirectory is never touched.
 public sealed class FixtureResolver
 {
     private readonly WslFixtureCache _wsl;
+    private readonly string _repoRoot;
 
     public FixtureResolver(WslFixtureCache wsl)
     {
         _wsl = wsl ?? throw new ArgumentNullException(nameof(wsl));
-        Environment.CurrentDirectory = FindRepoRoot();
+        _repoRoot = FindRepoRoot();
     }
 
     // Walk up from the executable's base directory until we find a
@@ -46,7 +47,7 @@ public sealed class FixtureResolver
 
         if (cell.FixturePath is not null)
         {
-            var abs = Path.GetFullPath(cell.FixturePath);
+            var abs = Path.GetFullPath(Path.Combine(_repoRoot, cell.FixturePath));
             if (!File.Exists(abs))
                 throw new FileNotFoundException($"Static fixture not found: {abs}");
             var size = new FileInfo(abs).Length;
@@ -79,7 +80,7 @@ public sealed class FixtureResolver
 
         if (needsRegen)
         {
-            var scriptWinAbs = Path.GetFullPath($"scripts/fixtures/make-{key}.sh");
+            var scriptWinAbs = Path.GetFullPath(Path.Combine(_repoRoot, $"scripts/fixtures/make-{key}.sh"));
             if (!File.Exists(scriptWinAbs))
                 throw new FileNotFoundException($"Generator script not found: {scriptWinAbs}");
             var scriptWsl = ToWslMountPath(scriptWinAbs);
