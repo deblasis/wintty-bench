@@ -7,11 +7,12 @@ namespace WinttyBench.Tests;
 public class CellTests
 {
     [Fact]
-    public void StarredCells_Contains_Five_After_C5_Added()
+    public void StarredCells_Contains_Seven_After_C10_C11_Added()
     {
         var all = StarredCells.All;
-        Assert.Equal(5, all.Count);
-        Assert.Contains(all, c => c.Id == "C5");
+        Assert.Equal(7, all.Count);
+        Assert.Contains(all, c => c.Id == "C10");
+        Assert.Contains(all, c => c.Id == "C11");
     }
 
     [Fact]
@@ -102,5 +103,27 @@ public class CellTests
             WinttyConfigOverrides: new Dictionary<string, string>()));
 
         Assert.Contains("exactly one", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void C10_Is_Wsl_Generated_With_FixtureKey()
+    {
+        var c10 = StarredCells.All.Single(c => c.Id == "C10");
+        Assert.Equal("wsl-ubuntu-24.04", c10.Shell);
+        Assert.Equal("vtebench_cat_sustained", c10.Workload);
+        Assert.Equal("throughput_bytes_per_sec", c10.Kpi);
+        Assert.Null(c10.FixturePath);
+        Assert.Equal("c10", c10.FixtureKey);
+    }
+
+    [Fact]
+    public void C11_Is_Wsl_Generated_With_FixtureKey()
+    {
+        var c11 = StarredCells.All.Single(c => c.Id == "C11");
+        Assert.Equal("wsl-ubuntu-24.04", c11.Shell);
+        Assert.Equal("filtered_random_sustained", c11.Workload);
+        Assert.Equal("throughput_bytes_per_sec", c11.Kpi);
+        Assert.Null(c11.FixturePath);
+        Assert.Equal("c11", c11.FixtureKey);
     }
 }
