@@ -6,22 +6,25 @@ Measures throughput, startup, memory, VT correctness, resize reflow, and keystro
 
 ## Status
 
-MVP in progress: single harness binary, four throughput cells, CI-mode JSON output. Marketing-grade numbers, remaining KPIs, and published reports come in later iterations.
+MVP shipped. Plan 2A extends to 7 throughput cells (C1-C5, C10, C11) with mode-aware generated fixtures on the WSL side and schema v2 (`IterationSample` per iteration, `hung` flag, nullable p50 for degraded cells). Remaining KPIs and WT/WezTerm comparison come in later plans.
 
-## First baseline (MVP)
+## Baseline (Plan 2A)
 
-Captured 2026-04-20 against wintty `windows@30482d8` (CI mode, ~30% GHA-equivalent variance expected).
+Captured 2026-04-20 against wintty `windows@30482d8` (CI mode, ~30% GHA-equivalent variance expected). Schema version 2.
 
-| Cell | Shell | Workload | p50 throughput |
-|---|---|---|---|
-| C1 | pwsh-7.4 | vtebench dense_cells | 251 B/s |
-| C2 | pwsh-7.4 | vtebench scrolling | 25 B/s |
-| C3 | pwsh-7.4 | cjk_jp_mixed_1mb | 151,910 B/s |
-| C4 | wsl-ubuntu-24.04 | vtebench dense_cells | 328 B/s |
+| Cell | Shell | Workload | Fixture size | p50 throughput |
+|------|------------------|--------------------------|--------------|----------------|
+| C1   | pwsh-7.4         | vtebench dense_cells     | 765 B        | 222 B/s        |
+| C2   | pwsh-7.4         | vtebench scrolling       | 71 B         | 24 B/s         |
+| C3   | pwsh-7.4         | cjk_jp_mixed_1mb         | 1 MB         | 128,520 B/s    |
+| C4   | wsl-ubuntu-24.04 | vtebench dense_cells     | 765 B        | 307 B/s        |
+| C5   | wsl-ubuntu-24.04 | vtebench unicode         | 84 B         | 33 B/s         |
+| C10  | wsl-ubuntu-24.04 | vtebench_cat_sustained   | 1 MB         | 23,142 B/s     |
+| C11  | wsl-ubuntu-24.04 | filtered_random_sustained| 1 MB         | 58,050 B/s     |
 
-C1, C2, C4 use tiny fixtures (<1KB) so the numbers are startup-dominated; treat C3 (1MB CJK mix) as the only steady-state signal in this MVP. Fixture sizes and a second CJK cell (C3a/C3b knob A/B) land in Plan 2/Plan 4.
+C1, C2, C4, C5 use sub-1 KB fixtures so those numbers are startup-dominated; treat C3, C10, C11 as steady-state signal. Generators for C10 and C11 live in `scripts/fixtures/`; first run on a machine generates + caches the fixture under `$HOME/.cache/wintty-bench/` on WSL (content-hashed sidecar, regenerate on mismatch).
 
-Marketing-grade numbers coming in Plan 4.
+Marketing-grade numbers coming in a later plan.
 
 ## Quick start
 
