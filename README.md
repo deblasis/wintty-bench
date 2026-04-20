@@ -20,7 +20,7 @@ Captured 2026-04-20 against wintty `windows@30482d8` (CI mode, ~30% GHA-equivale
 | C4   | wsl-ubuntu-24.04 | vtebench dense_cells     | 765 B        | 307 B/s        |
 | C5   | wsl-ubuntu-24.04 | vtebench unicode         | 84 B         | 33 B/s         |
 | C10  | wsl-ubuntu-24.04 | vtebench_cat_sustained   | 1 MB         | 23,142 B/s     |
-| C11  | wsl-ubuntu-24.04 | filtered_random_sustained| 1 MB         | 58,050 B/s     |
+| C11  | wsl-ubuntu-24.04 | filtered_random_sustained| 1 MB         | 59,103 B/s     |
 
 C1, C2, C4, C5 use sub-1 KB fixtures so those numbers are startup-dominated; treat C3, C10, C11 as steady-state signal. Generators for C10 and C11 live in `scripts/fixtures/`; first run on a machine generates + caches the fixture under `$HOME/.cache/wintty-bench/` on WSL (content-hashed sidecar, regenerate on mismatch).
 
