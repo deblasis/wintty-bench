@@ -1,5 +1,6 @@
 using System.Text.Json;
 using WinttyBench;
+using WinttyBench.Kpis;
 using Xunit;
 
 namespace WinttyBench.Tests;
@@ -40,7 +41,7 @@ public class ResultSchemaTests
             ValueP95: 179200000,
             ValueP99: 175000000,
             ValueStddev: 4200000,
-            RawIterations: [1, 2, 3],
+            RawIterations: new[] { new IterationSample(1.0, false), new IterationSample(2.0, false), new IterationSample(3.0, false) },
             Source: "hyperfine",
             Notes: "");
 
@@ -59,7 +60,9 @@ public class ResultSchemaTests
             new EnvCapture("sha", "ver", "wt", null, "win", "cpu", "gpu", 32, new DisplayCapture(1920, 1080, 60, 1.0)),
             new FairnessCapture("default", false, "Normal", false, 1, 10, []),
             "C1", "pwsh-7.4", "vtebench_dense_cells", "throughput_bytes_per_sec",
-            100, 95, 90, 5, [100, 100, 100], "hyperfine", "");
+            100, 95, 90, 5,
+            new[] { new IterationSample(100.0, false), new IterationSample(100.0, false), new IterationSample(100.0, false) },
+            "hyperfine", "");
 
         var json = JsonSerializer.Serialize(original, ResultSchemaContext.Default.ResultEnvelope);
         var parsed = JsonSerializer.Deserialize(json, ResultSchemaContext.Default.ResultEnvelope);
@@ -67,5 +70,34 @@ public class ResultSchemaTests
         Assert.NotNull(parsed);
         Assert.Equal(original.CellId, parsed.CellId);
         Assert.Equal(original.ValueP50, parsed.ValueP50);
+    }
+
+    [Fact]
+    public void Envelope_Serializes_With_SchemaVersion_2()
+    {
+        var env = new ResultEnvelope(
+            SchemaVersion: 2,
+            RunId: "r",
+            Mode: "ci",
+            ReleaseTag: null,
+            Env: new EnvCapture("sha", "v", "wt", null, "b", "cpu", "gpu", 16,
+                new DisplayCapture(1920, 1080, 60, 1.0)),
+            Fairness: new FairnessCapture("default", false, "Normal", false, 1, 10, ["first"]),
+            CellId: "C10",
+            Shell: "wsl-ubuntu-24.04",
+            Workload: "vtebench_cat_sustained",
+            Kpi: "throughput_bytes_per_sec",
+            ValueP50: 100.0,
+            ValueP95: 105.0,
+            ValueP99: 107.0,
+            ValueStddev: 2.0,
+            RawIterations: new[] { new IterationSample(1.0, false), new IterationSample(null, true) },
+            Source: "hyperfine",
+            Notes: "");
+
+        var json = System.Text.Json.JsonSerializer.Serialize(env, ResultSchemaContext.Default.ResultEnvelope);
+        Assert.Contains("\"schema_version\": 2", json, StringComparison.Ordinal);
+        Assert.Contains("\"hung\": true", json, StringComparison.Ordinal);
+        Assert.Contains("\"value\": null", json, StringComparison.Ordinal);
     }
 }

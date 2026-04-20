@@ -5,43 +5,82 @@ namespace WinttyBench.Tests;
 
 public class ThroughputKpiTests
 {
+    private static IterationSample Ok(double v) => new(v, false);
+    private static IterationSample Hung() => new(null, true);
+
     [Fact]
     public void BytesPerSecond_Computes_Throughput_From_Samples()
     {
-        // 1 MB fixture, 4 iterations each took 1 second -> 1 MB/s
-        var samples = new[] { 1.0, 1.0, 1.0, 1.0 };
+        var samples = new[] { Ok(1.0), Ok(1.0), Ok(1.0), Ok(1.0) };
         var kpi = new ThroughputKpi();
 
         var result = kpi.ComputeFromSamples(samples, fixtureBytes: 1_048_576);
 
-        Assert.Equal(1_048_576, result.ValueP50, precision: 0);
-        Assert.Equal(1_048_576, result.ValueP95, precision: 0);
+        Assert.Equal(1_048_576, result.ValueP50!.Value, precision: 0);
+        Assert.Equal(1_048_576, result.ValueP95!.Value, precision: 0);
         Assert.Equal(4, result.RawIterations.Count);
+        Assert.Equal("hyperfine", result.Source);
+    }
+
+    [Fact]
+    public void Hung_Samples_Excluded_From_Percentile()
+    {
+        var samples = new IterationSample[]
+        {
+            Ok(1.0), Ok(1.0), Ok(1.0), Ok(1.0), Ok(1.0), Ok(1.0), Ok(1.0),
+            Hung(), Hung(), Hung(),
+        };
+        var kpi = new ThroughputKpi();
+
+        var result = kpi.ComputeFromSamples(samples, fixtureBytes: 1_048_576);
+
+        Assert.Equal(1_048_576, result.ValueP50!.Value, precision: 0);
+        Assert.Equal("hyperfine", result.Source);
+        Assert.Equal(10, result.RawIterations.Count);
+    }
+
+    [Fact]
+    public void Majority_Hung_Marks_Degraded_With_Null_Values()
+    {
+        var samples = new IterationSample[]
+        {
+            Ok(1.0), Ok(1.0), Ok(1.0), Ok(1.0),
+            Hung(), Hung(), Hung(), Hung(), Hung(), Hung(),
+        };
+        var kpi = new ThroughputKpi();
+
+        var result = kpi.ComputeFromSamples(samples, fixtureBytes: 1_048_576);
+
+        Assert.Null(result.ValueP50);
+        Assert.Null(result.ValueP95);
+        Assert.Null(result.ValueP99);
+        Assert.Null(result.ValueStddev);
+        Assert.Equal("degraded", result.Source);
     }
 
     [Fact]
     public void BytesPerSecond_Computes_Stddev()
     {
-        var samples = new[] { 1.0, 2.0, 3.0, 4.0, 5.0 };
+        var samples = new[] { Ok(1.0), Ok(2.0), Ok(3.0), Ok(4.0), Ok(5.0) };
         var kpi = new ThroughputKpi();
 
         var result = kpi.ComputeFromSamples(samples, fixtureBytes: 100);
 
+        Assert.NotNull(result.ValueStddev);
         Assert.True(result.ValueStddev > 0);
-        Assert.Equal(5, result.RawIterations.Count);
     }
 
     [Fact]
-    public void BytesPerSecond_Trim_Discards_First_Last()
+    public void Trim_Discards_First_Last()
     {
-        // samples ordered by iteration index: [first=slow, ..., last=slow]
-        var samples = new[] { 10.0, 1.0, 1.0, 1.0, 10.0 };
-        var kpi = new ThroughputKpi();
-
+        var samples = new IterationSample[]
+        {
+            Ok(10.0), Ok(1.0), Ok(1.0), Ok(1.0), Ok(10.0),
+        };
         var trimmed = ThroughputKpi.TrimFirstAndLast(samples);
 
         Assert.Equal(3, trimmed.Count);
-        Assert.All(trimmed, s => Assert.Equal(1.0, s));
+        Assert.All(trimmed, s => Assert.Equal(1.0, s.Value!.Value));
     }
 
     [Fact]

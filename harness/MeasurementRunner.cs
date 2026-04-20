@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using WinttyBench.Cells;
+using WinttyBench.Fixtures;
+using WinttyBench.Kpis;
 using WinttyBench.Launchers;
 
 namespace WinttyBench;
@@ -14,18 +16,21 @@ public static class MeasurementRunner
     private static readonly TimeSpan ShellExitTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan SentinelPollInterval = TimeSpan.FromMilliseconds(25);
 
-    public static IReadOnlyList<double> RunThroughput(Cell cell, string winttyExe, FairnessProfile profile)
+    public static async Task<ThroughputRunResult> RunThroughputAsync(
+        Cell cell,
+        string winttyExe,
+        FairnessProfile profile,
+        FixtureResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(cell);
         ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(resolver);
 
-        // TODO(Plan 2A Task 5): resolve via FixtureResolver when FixtureKey is set
-        if (!File.Exists(cell.FixturePath!))
-            throw new FileNotFoundException($"Fixture not found: {cell.FixturePath!}");
+        var handle = await resolver.ResolveAsync(cell, profile);
 
         var launcher = new WinttyLauncher();
         var totalIters = profile.WarmupIters + profile.MeasuredIters;
-        var times = new List<double>(profile.MeasuredIters);
+        var samples = new List<IterationSample>(profile.MeasuredIters);
 
         for (var i = 0; i < totalIters; i++)
         {
@@ -34,7 +39,7 @@ public static class MeasurementRunner
                 $"wintty-bench-done-{Guid.NewGuid():N}.marker");
             if (File.Exists(sentinelPath)) File.Delete(sentinelPath);
 
-            var shellCmd = BuildShellCommandForCell(cell, sentinelPath);
+            var shellCmd = BuildShellCommandForCell(cell, handle.ShellPath, sentinelPath);
 
             var launch = launcher.Launch(new LaunchRequest(
                 TargetExePath: winttyExe,
@@ -44,9 +49,14 @@ public static class MeasurementRunner
                 Rows: 32));
 
             var sw = Stopwatch.StartNew();
+            var hung = false;
             try
             {
                 WaitForSentinel(sentinelPath, ShellExitTimeout);
+            }
+            catch (TimeoutException)
+            {
+                hung = true;
             }
             finally
             {
@@ -58,11 +68,13 @@ public static class MeasurementRunner
 
             if (!isWarmup)
             {
-                times.Add(sw.Elapsed.TotalSeconds);
+                samples.Add(hung
+                    ? new IterationSample(Value: null, Hung: true)
+                    : new IterationSample(Value: sw.Elapsed.TotalSeconds, Hung: false));
             }
         }
 
-        return times;
+        return new ThroughputRunResult(samples, handle.SizeBytes);
     }
 
     private static void WaitForSentinel(string sentinelPath, TimeSpan timeout)
@@ -76,32 +88,27 @@ public static class MeasurementRunner
         throw new TimeoutException($"Sentinel '{sentinelPath}' not observed in {timeout}; shell did not finish.");
     }
 
-    private static string BuildShellCommandForCell(Cell cell, string sentinelPath)
+    private static string BuildShellCommandForCell(Cell cell, string fixtureShellPath, string sentinelPath)
     {
         // Ghostty's Windows termio wraps any command containing cmd.exe
         // metacharacters ('|', '&', '<', '>', '(', ')', '^', '%', '!') in
-        // `cmd.exe /c ...`, which mangles nested quotes from a `pwsh
-        // -Command "..."` form. Put the shell body in a temp script file
-        // instead so the `command = ...` value in the config is a plain
-        // argv with no shell metacharacters.
-        // TODO(Plan 2A Task 5): resolve via FixtureResolver when FixtureKey is set
-        var fixtureAbs = Path.GetFullPath(cell.FixturePath!);
+        // `cmd.exe /c ...`, which mangles nested quotes. Put the shell body
+        // in a temp script file instead so the `command = ...` value in
+        // the config is a plain argv with no shell metacharacters.
         var scriptsDir = Path.Combine(Path.GetTempPath(), "wintty-bench-scripts");
         Directory.CreateDirectory(scriptsDir);
 
         return cell.Shell switch
         {
-            "pwsh-7.4" => BuildPwshCommand(cell, fixtureAbs, scriptsDir, sentinelPath),
-            "wsl-ubuntu-24.04" => BuildWslCommand(cell, fixtureAbs, scriptsDir, sentinelPath),
-            _ => throw new NotSupportedException($"Shell '{cell.Shell}' not supported in MVP"),
+            "pwsh-7.4" => BuildPwshCommand(cell, fixtureShellPath, scriptsDir, sentinelPath),
+            "wsl-ubuntu-24.04" => BuildWslCommand(cell, fixtureShellPath, scriptsDir, sentinelPath),
+            _ => throw new NotSupportedException($"Shell '{cell.Shell}' not supported"),
         };
     }
 
     private static string BuildPwshCommand(Cell cell, string fixtureAbs, string scriptsDir, string sentinelPath)
     {
         var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.ps1");
-        // Sentinel is written after Write-Host completes but before `exit`:
-        // the stopwatch includes the render, not pwsh teardown.
         var body = string.Create(CultureInfo.InvariantCulture,
             $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
         File.WriteAllText(scriptPath, body);
@@ -111,21 +118,20 @@ public static class MeasurementRunner
             $"pwsh -NoProfile -NonInteractive -NoLogo -File {scriptPath}");
     }
 
-    private static string BuildWslCommand(Cell cell, string fixtureAbs, string scriptsDir, string sentinelPath)
+    private static string BuildWslCommand(Cell cell, string fixtureWslPath, string scriptsDir, string sentinelPath)
     {
         var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.sh");
-        var fixtureWsl = ToWslPath(fixtureAbs);
-        var sentinelWsl = ToWslPath(sentinelPath);
+        var sentinelWsl = ToWslMountPath(sentinelPath);
         // Note: LF line endings; bash under WSL rejects CRLF script lines.
         var body = string.Create(CultureInfo.InvariantCulture,
-            $"cat '{fixtureWsl}'\ntouch '{sentinelWsl}'\nexit\n");
+            $"cat '{fixtureWslPath}'\ntouch '{sentinelWsl}'\nexit\n");
         File.WriteAllText(scriptPath, body.Replace("\r\n", "\n", StringComparison.Ordinal));
-        var scriptWsl = ToWslPath(scriptPath);
+        var scriptWsl = ToWslMountPath(scriptPath);
         return string.Create(CultureInfo.InvariantCulture,
             $"wsl -d Ubuntu-24.04 bash {scriptWsl}");
     }
 
-    private static string ToWslPath(string windowsPath)
+    private static string ToWslMountPath(string windowsPath)
     {
         // C:\foo\bar -> /mnt/c/foo/bar
         var drive = char.ToLowerInvariant(windowsPath[0]);
@@ -133,3 +139,5 @@ public static class MeasurementRunner
         return string.Create(CultureInfo.InvariantCulture, $"/mnt/{drive}{rest}");
     }
 }
+
+public sealed record ThroughputRunResult(IReadOnlyList<IterationSample> Samples, long FixtureBytes);

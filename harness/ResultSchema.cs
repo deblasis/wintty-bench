@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using WinttyBench.Kpis;
 
 namespace WinttyBench;
 
@@ -13,11 +14,11 @@ public sealed record ResultEnvelope(
     [property: JsonPropertyName("shell")] string Shell,
     [property: JsonPropertyName("workload")] string Workload,
     [property: JsonPropertyName("kpi")] string Kpi,
-    [property: JsonPropertyName("value_p50")] double ValueP50,
-    [property: JsonPropertyName("value_p95")] double ValueP95,
-    [property: JsonPropertyName("value_p99")] double ValueP99,
-    [property: JsonPropertyName("value_stddev")] double ValueStddev,
-    [property: JsonPropertyName("raw_iterations")] IReadOnlyList<double> RawIterations,
+    [property: JsonPropertyName("value_p50")] double? ValueP50,
+    [property: JsonPropertyName("value_p95")] double? ValueP95,
+    [property: JsonPropertyName("value_p99")] double? ValueP99,
+    [property: JsonPropertyName("value_stddev")] double? ValueStddev,
+    [property: JsonPropertyName("raw_iterations")] IReadOnlyList<IterationSample> RawIterations,
     [property: JsonPropertyName("source")] string Source,
     [property: JsonPropertyName("notes")] string Notes);
 
@@ -52,4 +53,5 @@ public sealed record FairnessCapture(
     PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
 [JsonSerializable(typeof(ResultEnvelope))]
+[JsonSerializable(typeof(IterationSample))]
 public partial class ResultSchemaContext : JsonSerializerContext { }

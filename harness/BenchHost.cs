@@ -1,5 +1,6 @@
 using System.Globalization;
 using WinttyBench.Cells;
+using WinttyBench.Fixtures;
 using WinttyBench.Kpis;
 
 namespace WinttyBench;
@@ -98,23 +99,24 @@ public static class BenchHost
                 : Path.Combine("results", string.Create(CultureInfo.InvariantCulture, $"{DateTime.UtcNow:yyyy-MM-dd}-{SanitizeForPath(parsed.ReleaseTag!)}"));
             Directory.CreateDirectory(outDir);
 
+            var resolver = new FixtureResolver(new WslFixtureCache());
+
             foreach (var cellId in parsed.Cells)
             {
                 var cell = StarredCells.All.Single(c => c.Id == cellId);
                 Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
                     $"[{cellId}] {cell.Shell} x {cell.Workload} ({cell.Kpi})"));
 
-                var samples = MeasurementRunner.RunThroughput(cell, parsed.TargetExePath, profile);
+                var run = MeasurementRunner.RunThroughputAsync(cell, parsed.TargetExePath, profile, resolver).GetAwaiter().GetResult();
+                var samples = run.Samples;
                 var trimmed = profile.Discarded.Contains("last")
                     ? ThroughputKpi.TrimFirstAndLast(samples)
                     : samples.Skip(profile.Discarded.Count).ToArray();
 
-                // TODO(Plan 2A Task 10): resolve via FixtureResolver when FixtureKey is set
-                var fixtureBytes = new FileInfo(cell.FixturePath!).Length;
-                var kpiResult = new ThroughputKpi().ComputeFromSamples(trimmed, fixtureBytes);
+                var kpiResult = new ThroughputKpi().ComputeFromSamples(trimmed, run.FixtureBytes);
 
                 var envelope = new ResultEnvelope(
-                    SchemaVersion: 1,
+                    SchemaVersion: 2,
                     RunId: runId,
                     Mode: parsed.Mode,
                     ReleaseTag: parsed.ReleaseTag,
@@ -136,8 +138,11 @@ public static class BenchHost
                 File.WriteAllText(outPath,
                     System.Text.Json.JsonSerializer.Serialize(envelope,
                         ResultSchemaContext.Default.ResultEnvelope));
+                var p50Display = kpiResult.ValueP50.HasValue
+                    ? string.Create(CultureInfo.InvariantCulture, $"{kpiResult.ValueP50.Value:N0} B/s")
+                    : "degraded";
                 Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                    $"[{cellId}] wrote {outPath} (p50 = {kpiResult.ValueP50:N0} B/s)"));
+                    $"[{cellId}] wrote {outPath} (p50 = {p50Display})"));
             }
 
             return 0;
