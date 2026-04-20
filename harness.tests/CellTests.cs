@@ -7,15 +7,22 @@ namespace WinttyBench.Tests;
 public class CellTests
 {
     [Fact]
-    public void StarredCells_Contains_MVP_Four()
+    public void StarredCells_Contains_Five_After_C5_Added()
     {
         var all = StarredCells.All;
+        Assert.Equal(5, all.Count);
+        Assert.Contains(all, c => c.Id == "C5");
+    }
 
-        Assert.Equal(4, all.Count);
-        Assert.Contains(all, c => c.Id == "C1");
-        Assert.Contains(all, c => c.Id == "C2");
-        Assert.Contains(all, c => c.Id == "C3");
-        Assert.Contains(all, c => c.Id == "C4");
+    [Fact]
+    public void C5_Targets_Wsl_Vtebench_Unicode_Throughput()
+    {
+        var c5 = StarredCells.All.Single(c => c.Id == "C5");
+        Assert.Equal("wsl-ubuntu-24.04", c5.Shell);
+        Assert.Equal("vtebench_unicode", c5.Workload);
+        Assert.Equal("throughput_bytes_per_sec", c5.Kpi);
+        Assert.Equal("fixtures/vtebench/unicode.txt", c5.FixturePath);
+        Assert.Null(c5.FixtureKey);
     }
 
     [Fact]

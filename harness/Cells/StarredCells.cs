@@ -46,5 +46,14 @@ public static class StarredCells
             FixturePath: "fixtures/vtebench/dense_cells.txt",
             FixtureKey: null,
             WinttyConfigOverrides: Empty),
+
+        new Cell(
+            Id: "C5",
+            Shell: "wsl-ubuntu-24.04",
+            Workload: "vtebench_unicode",
+            Kpi: "throughput_bytes_per_sec",
+            FixturePath: "fixtures/vtebench/unicode.txt",
+            FixtureKey: null,
+            WinttyConfigOverrides: Empty),
     ];
 }

@@ -46,4 +46,20 @@ public class FairnessProfileTests
         Assert.Equal(profile.PowerPlan, capture.PowerPlan);
         Assert.Equal(profile.WarmupIters, capture.WarmupIters);
     }
+
+    [Fact]
+    public void Ci_FixtureSizes_Are_1MB_For_C10_And_C11()
+    {
+        var profile = FairnessProfile.Ci();
+        Assert.Equal(1L * 1024 * 1024, profile.FixtureSizeBytesByKey["c10"]);
+        Assert.Equal(1L * 1024 * 1024, profile.FixtureSizeBytesByKey["c11"]);
+    }
+
+    [Fact]
+    public void Marketing_FixtureSizes_Are_10MB_For_C10_And_C11()
+    {
+        var profile = FairnessProfile.Marketing();
+        Assert.Equal(10L * 1024 * 1024, profile.FixtureSizeBytesByKey["c10"]);
+        Assert.Equal(10L * 1024 * 1024, profile.FixtureSizeBytesByKey["c11"]);
+    }
 }
