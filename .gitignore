@@ -1,0 +1,21 @@
+# .NET build output
+**/bin/
+**/obj/
+*.binlog
+
+# CI-mode results (never published)
+results/ci/
+
+# WGC raw frame dumps (too big, not interesting)
+**/wgc-frames/
+
+# Camera raw video (git-lfs elsewhere)
+**/*.mov
+**/*.mp4
+
+# Editor
+.vscode/
+.vs/
+.idea/
+*.swp
+.DS_Store
