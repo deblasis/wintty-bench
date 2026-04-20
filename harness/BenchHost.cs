@@ -1,4 +1,6 @@
+using System.Globalization;
 using WinttyBench.Cells;
+using WinttyBench.Kpis;
 
 namespace WinttyBench;
 
@@ -70,14 +72,57 @@ public static class BenchHost
         try
         {
             var parsed = ParseArgs(args);
-            Console.WriteLine($"Mode: {parsed.Mode}");
-            Console.WriteLine($"Cells: {string.Join(", ", parsed.Cells)}");
-            Console.WriteLine($"Target: {parsed.TargetExePath}");
-            if (parsed.ReleaseTag is not null)
-                Console.WriteLine($"Release tag: {parsed.ReleaseTag}");
+            var profile = parsed.Mode == "ci" ? FairnessProfile.Ci() : FairnessProfile.Marketing();
+            var env = EnvProbe.Capture(parsed.TargetExePath);
+            var shortSha = env.WinttySha.Length >= 7 ? env.WinttySha[..7] : env.WinttySha;
+            var runId = string.Create(CultureInfo.InvariantCulture, $"{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ}-{shortSha}");
 
-            // Task 12 wires up the actual measurement loop.
-            Console.WriteLine("(measurement loop not yet implemented; see Plan Task 12)");
+            var outDir = parsed.Mode == "ci"
+                ? Path.Combine("results", "ci", runId)
+                : Path.Combine("results", string.Create(CultureInfo.InvariantCulture, $"{DateTime.UtcNow:yyyy-MM-dd}-{parsed.ReleaseTag}"));
+            Directory.CreateDirectory(outDir);
+
+            foreach (var cellId in parsed.Cells)
+            {
+                var cell = StarredCells.All.Single(c => c.Id == cellId);
+                Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"[{cellId}] {cell.Shell} x {cell.Workload} ({cell.Kpi})"));
+
+                var samples = MeasurementRunner.RunThroughput(cell, parsed.TargetExePath, profile);
+                var trimmed = profile.Discarded.Contains("last")
+                    ? ThroughputKpi.TrimFirstAndLast(samples)
+                    : samples.Skip(profile.Discarded.Count).ToArray();
+
+                var fixtureBytes = new FileInfo(cell.FixturePath).Length;
+                var kpiResult = new ThroughputKpi().ComputeFromSamples(trimmed, fixtureBytes);
+
+                var envelope = new ResultEnvelope(
+                    SchemaVersion: 1,
+                    RunId: runId,
+                    Mode: parsed.Mode,
+                    ReleaseTag: parsed.ReleaseTag,
+                    Env: env,
+                    Fairness: profile.ToCapture(),
+                    CellId: cell.Id,
+                    Shell: cell.Shell,
+                    Workload: cell.Workload,
+                    Kpi: cell.Kpi,
+                    ValueP50: kpiResult.ValueP50,
+                    ValueP95: kpiResult.ValueP95,
+                    ValueP99: kpiResult.ValueP99,
+                    ValueStddev: kpiResult.ValueStddev,
+                    RawIterations: kpiResult.RawIterations,
+                    Source: kpiResult.Source,
+                    Notes: "");
+
+                var outPath = Path.Combine(outDir, string.Create(CultureInfo.InvariantCulture, $"{cell.Id}.json"));
+                File.WriteAllText(outPath,
+                    System.Text.Json.JsonSerializer.Serialize(envelope,
+                        ResultSchemaContext.Default.ResultEnvelope));
+                Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                    $"[{cellId}] wrote {outPath} (p50 = {kpiResult.ValueP50:N0} B/s)"));
+            }
+
             return 0;
         }
         catch (ArgumentException ex)
