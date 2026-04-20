@@ -14,15 +14,15 @@ Captured 2026-04-20 against wintty `windows@30482d8` (CI mode, ~30% GHA-equivale
 
 | Cell | Shell | Workload | Fixture size | p50 throughput |
 |------|------------------|--------------------------|--------------|----------------|
-| C1   | pwsh-7.4         | vtebench dense_cells     | 765 B        | 222 B/s        |
-| C2   | pwsh-7.4         | vtebench scrolling       | 71 B         | 24 B/s         |
+| C1   | pwsh-7.4         | vtebench dense_cells     | 2.57 MB      | pending re-run |
+| C2   | pwsh-7.4         | vtebench scrolling       | 200 KB       | pending re-run |
 | C3   | pwsh-7.4         | cjk_jp_mixed_1mb         | 1 MB         | 128,520 B/s    |
-| C4   | wsl-ubuntu-24.04 | vtebench dense_cells     | 765 B        | 307 B/s        |
-| C5   | wsl-ubuntu-24.04 | vtebench unicode         | 84 B         | 33 B/s         |
+| C4   | wsl-ubuntu-24.04 | vtebench dense_cells     | 2.57 MB      | pending re-run |
+| C5   | wsl-ubuntu-24.04 | vtebench unicode         | 138 KB       | pending re-run |
 | C10  | wsl-ubuntu-24.04 | vtebench_cat_sustained   | 1 MB         | 23,142 B/s     |
 | C11  | wsl-ubuntu-24.04 | filtered_random_sustained| 1 MB         | 59,103 B/s     |
 
-C1, C2, C4, C5 use sub-1 KB fixtures so those numbers are startup-dominated; treat C3, C10, C11 as steady-state signal. Generators for C10 and C11 live in `scripts/fixtures/`; first run on a machine generates + caches the fixture under `$HOME/.cache/wintty-bench/` on WSL (content-hashed sidecar, regenerate on mismatch).
+C1, C2, C4, C5 fixtures were replaced from upstream shell-script wrappers to the actual byte streams vtebench produces; p50 re-runs land in a follow-up. C3, C10, C11 are current steady-state signal. Generators for all vtebench fixtures live in `scripts/fixtures/make-vtebench-fixtures.sh`; generators for C10 and C11 live in `scripts/fixtures/make-c1{0,1}.sh` and cache under `$HOME/.cache/wintty-bench/` on WSL with a content-hashed sidecar.
 
 Marketing-grade numbers coming in a later plan.
 
