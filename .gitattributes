@@ -3,5 +3,5 @@
 *.bat text eol=crlf
 *.png binary
 *.svg binary
-fixtures/vtebench/*.txt binary
-fixtures/cjk/*.txt binary
+fixtures/vtebench/*.txt -text
+fixtures/cjk/*.txt -text

@@ -19,3 +19,8 @@ results/ci/
 .idea/
 *.swp
 .DS_Store
+
+# Windows Explorer
+Thumbs.db
+ehthumbs.db
+desktop.ini
