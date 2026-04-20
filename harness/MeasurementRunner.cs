@@ -7,6 +7,13 @@ namespace WinttyBench;
 
 public static class MeasurementRunner
 {
+    // Wintty's WinUI 3 shell does not quit on last-window-closed on Windows
+    // even with quit-after-last-window-closed=true in config, so the harness
+    // drives the lifecycle itself: wait for a sentinel file that the shell
+    // script writes on its last line, then stop the clock and kill Wintty.
+    private static readonly TimeSpan ShellExitTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan SentinelPollInterval = TimeSpan.FromMilliseconds(25);
+
     public static IReadOnlyList<double> RunThroughput(Cell cell, string winttyExe, FairnessProfile profile)
     {
         ArgumentNullException.ThrowIfNull(cell);
@@ -22,7 +29,11 @@ public static class MeasurementRunner
         for (var i = 0; i < totalIters; i++)
         {
             var isWarmup = i < profile.WarmupIters;
-            var shellCmd = BuildShellCommandForCell(cell);
+            var sentinelPath = Path.Combine(Path.GetTempPath(),
+                $"wintty-bench-done-{Guid.NewGuid():N}.marker");
+            if (File.Exists(sentinelPath)) File.Delete(sentinelPath);
+
+            var shellCmd = BuildShellCommandForCell(cell, sentinelPath);
 
             var launch = launcher.Launch(new LaunchRequest(
                 TargetExePath: winttyExe,
@@ -34,14 +45,14 @@ public static class MeasurementRunner
             var sw = Stopwatch.StartNew();
             try
             {
-                // Wait for wintty process to exit on its own (shell -c finishes).
-                var proc = Process.GetProcessById(launch.Process.ProcessId);
-                proc.WaitForExit((int)TimeSpan.FromMinutes(5).TotalMilliseconds);
+                WaitForSentinel(sentinelPath, ShellExitTimeout);
             }
             finally
             {
                 sw.Stop();
                 launch.Dispose();
+                try { if (File.Exists(sentinelPath)) File.Delete(sentinelPath); }
+                catch (IOException) { /* best effort */ }
             }
 
             if (!isWarmup)
@@ -53,20 +64,63 @@ public static class MeasurementRunner
         return times;
     }
 
-    private static string BuildShellCommandForCell(Cell cell)
+    private static void WaitForSentinel(string sentinelPath, TimeSpan timeout)
     {
-        // Shell runs inside wintty; the outer process exits when the shell exits.
-        // pwsh: Get-Content then Write-Host NoNewline then exit.
-        // WSL: cat then exit.
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (File.Exists(sentinelPath)) return;
+            Thread.Sleep(SentinelPollInterval);
+        }
+        throw new TimeoutException($"Sentinel '{sentinelPath}' not observed in {timeout}; shell did not finish.");
+    }
+
+    private static string BuildShellCommandForCell(Cell cell, string sentinelPath)
+    {
+        // Ghostty's Windows termio wraps any command containing cmd.exe
+        // metacharacters ('|', '&', '<', '>', '(', ')', '^', '%', '!') in
+        // `cmd.exe /c ...`, which mangles nested quotes from a `pwsh
+        // -Command "..."` form. Put the shell body in a temp script file
+        // instead so the `command = ...` value in the config is a plain
+        // argv with no shell metacharacters.
         var fixtureAbs = Path.GetFullPath(cell.FixturePath);
+        var scriptsDir = Path.Combine(Path.GetTempPath(), "wintty-bench-scripts");
+        Directory.CreateDirectory(scriptsDir);
+
         return cell.Shell switch
         {
-            "pwsh-7.4" => string.Create(CultureInfo.InvariantCulture,
-                $"pwsh -NoLogo -Command \"Get-Content -Raw '{fixtureAbs}' | Write-Host -NoNewline; exit\""),
-            "wsl-ubuntu-24.04" => string.Create(CultureInfo.InvariantCulture,
-                $"wsl -d Ubuntu-24.04 -- bash -c \"cat '{ToWslPath(fixtureAbs)}'; exit\""),
+            "pwsh-7.4" => BuildPwshCommand(cell, fixtureAbs, scriptsDir, sentinelPath),
+            "wsl-ubuntu-24.04" => BuildWslCommand(cell, fixtureAbs, scriptsDir, sentinelPath),
             _ => throw new NotSupportedException($"Shell '{cell.Shell}' not supported in MVP"),
         };
+    }
+
+    private static string BuildPwshCommand(Cell cell, string fixtureAbs, string scriptsDir, string sentinelPath)
+    {
+        var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.ps1");
+        // Sentinel is written after Write-Host completes but before `exit`:
+        // the stopwatch includes the render, not pwsh teardown.
+        var body = string.Create(CultureInfo.InvariantCulture,
+            $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
+        File.WriteAllText(scriptPath, body);
+        // -NoProfile skips ~1-2s of profile loading per launch. -NonInteractive
+        // guarantees no hidden prompt can wedge the measurement.
+        return string.Create(CultureInfo.InvariantCulture,
+            $"pwsh -NoProfile -NonInteractive -NoLogo -File {scriptPath}");
+    }
+
+    private static string BuildWslCommand(Cell cell, string fixtureAbs, string scriptsDir, string sentinelPath)
+    {
+        var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.sh");
+        var fixtureWsl = ToWslPath(fixtureAbs);
+        var sentinelWsl = ToWslPath(sentinelPath);
+        // Note: LF line endings; bash under WSL rejects CRLF script lines.
+        var body = string.Create(CultureInfo.InvariantCulture,
+            $"cat '{fixtureWsl}'\ntouch '{sentinelWsl}'\nexit\n");
+        File.WriteAllText(scriptPath, body.Replace("\r\n", "\n", StringComparison.Ordinal));
+        var scriptWsl = ToWslPath(scriptPath);
+        return string.Create(CultureInfo.InvariantCulture,
+            $"wsl -d Ubuntu-24.04 bash {scriptWsl}");
     }
 
     private static string ToWslPath(string windowsPath)

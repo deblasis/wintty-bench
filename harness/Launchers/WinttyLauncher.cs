@@ -10,13 +10,24 @@ public sealed class WinttyLauncher : ILauncher
 
     public LaunchHandle Launch(LaunchRequest request)
     {
+        ArgumentNullException.ThrowIfNull(request);
         var configRoot = Path.Combine(Path.GetTempPath(), "wintty-bench-" + Guid.NewGuid());
-        WriteConfig(configRoot, request.ConfigOverrides, templatePath: null);
+
+        // Pass the shell command through the config file's `command` key
+        // rather than -e argv. Wintty's WinUI entry on Windows does not
+        // forward -e to libghostty reliably (it falls back to the default
+        // shell, cmd.exe), but config.command is read by the surface
+        // initializer before termio spawns the child.
+        var overrides = new Dictionary<string, string>(request.ConfigOverrides, StringComparer.Ordinal)
+        {
+            ["command"] = request.ShellCommand,
+        };
+        WriteConfig(configRoot, overrides, templatePath: null);
 
         var startInfo = new ProcessStartInfo
         {
             FileName = request.TargetExePath,
-            Arguments = $"-e {request.ShellCommand}",
+            Arguments = string.Empty,
             UseShellExecute = false,
             RedirectStandardOutput = false,
             RedirectStandardError = false,
@@ -37,6 +48,17 @@ public sealed class WinttyLauncher : ILauncher
         };
     }
 
+    // Baseline keys every bench run needs, regardless of cell. Without
+    // quit-after-last-window-closed=true, Wintty stays alive after the
+    // shell exits on Windows (Linux-only default upstream) and the bench
+    // hangs on WaitForExit.
+    public static IReadOnlyDictionary<string, string> BaselineOverrides { get; } =
+        new Dictionary<string, string>
+        {
+            ["quit-after-last-window-closed"] = "true",
+            ["wait-after-command"] = "false",
+        };
+
     public static void WriteConfig(string configRoot, IReadOnlyDictionary<string, string> overrides, string? templatePath)
     {
         var ghosttyDir = Path.Combine(configRoot, "ghostty");
@@ -47,6 +69,10 @@ public sealed class WinttyLauncher : ILauncher
         {
             sb.Append(File.ReadAllText(templatePath));
             sb.AppendLine();
+        }
+        foreach (var (k, v) in BaselineOverrides)
+        {
+            sb.Append(k).Append(" = ").AppendLine(v);
         }
         foreach (var (k, v) in overrides)
         {

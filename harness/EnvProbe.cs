@@ -45,9 +45,13 @@ public static class EnvProbe
 
     private static string ProbeWtVersion()
     {
+        // `wt.exe --version` on modern Windows Terminal opens a Terminal
+        // window rather than printing to stdout. Query the AppX package
+        // instead: silent, and returns the installed version string.
         try
         {
-            var psi = new ProcessStartInfo("wt.exe", "--version")
+            var psi = new ProcessStartInfo("powershell.exe",
+                "-NoProfile -NonInteractive -Command \"(Get-AppxPackage Microsoft.WindowsTerminal -ErrorAction SilentlyContinue).Version\"")
             {
                 RedirectStandardOutput = true,
                 UseShellExecute = false,
@@ -55,8 +59,9 @@ public static class EnvProbe
             };
             using var p = Process.Start(psi);
             if (p is null) return "not-installed";
-            p.WaitForExit(2000);
-            return p.StandardOutput.ReadToEnd().Trim();
+            p.WaitForExit(3000);
+            var v = p.StandardOutput.ReadToEnd().Trim();
+            return string.IsNullOrWhiteSpace(v) ? "not-installed" : v;
         }
         catch (System.ComponentModel.Win32Exception)
         {
