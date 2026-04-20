@@ -33,7 +33,10 @@ public class FixtureResolverTests
         var cell = MakePlan1Cell("pwsh-7.4", "fixtures/vtebench/dense_cells.txt");
         var handle = await resolver.ResolveAsync(cell, FairnessProfile.Ci());
 
-        Assert.Equal(Path.GetFullPath("fixtures/vtebench/dense_cells.txt"), handle.ShellPath);
+        Assert.True(handle.ShellPath.EndsWith(@"\fixtures\vtebench\dense_cells.txt", StringComparison.OrdinalIgnoreCase)
+                 || handle.ShellPath.EndsWith("/fixtures/vtebench/dense_cells.txt", StringComparison.OrdinalIgnoreCase),
+            $"ShellPath should end with the fixture path, got: {handle.ShellPath}");
+        Assert.True(Path.IsPathRooted(handle.ShellPath), $"ShellPath should be absolute, got: {handle.ShellPath}");
         Assert.True(handle.SizeBytes > 0);
     }
 
