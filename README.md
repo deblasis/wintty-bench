@@ -11,7 +11,7 @@ MVP in progress: single harness binary, four throughput cells, CI-mode JSON outp
 ## Quick start
 
 ```powershell
-dotnet run --project harness -- --mode=ci --cells=C1 --target=<path-to-Ghostty.exe>
+dotnet run --project harness -- --mode=ci --cells=C1 --target=<path-to-Wintty.exe>
 ```
 
 ## Reproducing marketing numbers
