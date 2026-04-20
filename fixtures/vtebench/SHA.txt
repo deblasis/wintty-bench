@@ -1,0 +1,6 @@
+ead80032e57dee2e75f0b51f2ea67528647d9944
+Source: https://github.com/alacritty/vtebench/tree/ead80032e57dee2e75f0b51f2ea67528647d9944/benchmarks
+
+Files used (vtebench reorganized; no short.txt exists at this SHA):
+  dense_cells.txt  <- benchmarks/dense_cells/benchmark
+  scrolling.txt    <- benchmarks/scrolling/benchmark
