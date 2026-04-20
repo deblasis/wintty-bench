@@ -109,7 +109,8 @@ public static class BenchHost
                     ? ThroughputKpi.TrimFirstAndLast(samples)
                     : samples.Skip(profile.Discarded.Count).ToArray();
 
-                var fixtureBytes = new FileInfo(cell.FixturePath).Length;
+                // TODO(Plan 2A Task 10): resolve via FixtureResolver when FixtureKey is set
+                var fixtureBytes = new FileInfo(cell.FixturePath!).Length;
                 var kpiResult = new ThroughputKpi().ComputeFromSamples(trimmed, fixtureBytes);
 
                 var envelope = new ResultEnvelope(

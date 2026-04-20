@@ -15,6 +15,7 @@ public static class StarredCells
             Workload: "vtebench_dense_cells",
             Kpi: "throughput_bytes_per_sec",
             FixturePath: "fixtures/vtebench/dense_cells.txt",
+            FixtureKey: null,
             WinttyConfigOverrides: Empty),
 
         new Cell(
@@ -23,6 +24,7 @@ public static class StarredCells
             Workload: "vtebench_scrolling",
             Kpi: "throughput_bytes_per_sec",
             FixturePath: "fixtures/vtebench/scrolling.txt",
+            FixtureKey: null,
             WinttyConfigOverrides: Empty),
 
         // C3 is a single baseline cell at MVP (no utf8-console knob yet).
@@ -33,6 +35,7 @@ public static class StarredCells
             Workload: "cjk_jp_mixed_1mb",
             Kpi: "throughput_bytes_per_sec",
             FixturePath: "fixtures/cjk/jp-mixed-1mb.txt",
+            FixtureKey: null,
             WinttyConfigOverrides: Empty),
 
         new Cell(
@@ -41,6 +44,7 @@ public static class StarredCells
             Workload: "vtebench_dense_cells",
             Kpi: "throughput_bytes_per_sec",
             FixturePath: "fixtures/vtebench/dense_cells.txt",
+            FixtureKey: null,
             WinttyConfigOverrides: Empty),
     ];
 }

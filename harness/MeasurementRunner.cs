@@ -19,8 +19,9 @@ public static class MeasurementRunner
         ArgumentNullException.ThrowIfNull(cell);
         ArgumentNullException.ThrowIfNull(profile);
 
-        if (!File.Exists(cell.FixturePath))
-            throw new FileNotFoundException($"Fixture not found: {cell.FixturePath}");
+        // TODO(Plan 2A Task 5): resolve via FixtureResolver when FixtureKey is set
+        if (!File.Exists(cell.FixturePath!))
+            throw new FileNotFoundException($"Fixture not found: {cell.FixturePath!}");
 
         var launcher = new WinttyLauncher();
         var totalIters = profile.WarmupIters + profile.MeasuredIters;
@@ -83,7 +84,8 @@ public static class MeasurementRunner
         // -Command "..."` form. Put the shell body in a temp script file
         // instead so the `command = ...` value in the config is a plain
         // argv with no shell metacharacters.
-        var fixtureAbs = Path.GetFullPath(cell.FixturePath);
+        // TODO(Plan 2A Task 5): resolve via FixtureResolver when FixtureKey is set
+        var fixtureAbs = Path.GetFullPath(cell.FixturePath!);
         var scriptsDir = Path.Combine(Path.GetTempPath(), "wintty-bench-scripts");
         Directory.CreateDirectory(scriptsDir);
 

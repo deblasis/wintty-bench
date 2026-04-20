@@ -27,6 +27,7 @@ public class CellTests
         Assert.Equal("vtebench_dense_cells", c1.Workload);
         Assert.Equal("throughput_bytes_per_sec", c1.Kpi);
         Assert.Equal("fixtures/vtebench/dense_cells.txt", c1.FixturePath);
+        Assert.Null(c1.FixtureKey);
     }
 
     [Fact]
@@ -38,6 +39,7 @@ public class CellTests
         Assert.Equal("vtebench_scrolling", c2.Workload);
         Assert.Equal("throughput_bytes_per_sec", c2.Kpi);
         Assert.Equal("fixtures/vtebench/scrolling.txt", c2.FixturePath);
+        Assert.Null(c2.FixtureKey);
     }
 
     [Fact]
@@ -52,6 +54,7 @@ public class CellTests
         Assert.Equal("cjk_jp_mixed_1mb", c3.Workload);
         Assert.Equal("fixtures/cjk/jp-mixed-1mb.txt", c3.FixturePath);
         Assert.Empty(c3.WinttyConfigOverrides);
+        Assert.Null(c3.FixtureKey);
     }
 
     [Fact]
@@ -61,5 +64,36 @@ public class CellTests
 
         Assert.Equal("wsl-ubuntu-24.04", c4.Shell);
         Assert.Equal("vtebench_dense_cells", c4.Workload);
+        Assert.Null(c4.FixtureKey);
+    }
+
+    [Fact]
+    public void Cell_Rejects_Both_Path_And_Key()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new Cell(
+            Id: "X",
+            Shell: "pwsh-7.4",
+            Workload: "w",
+            Kpi: "throughput_bytes_per_sec",
+            FixturePath: "fixtures/vtebench/dense_cells.txt",
+            FixtureKey: "c10",
+            WinttyConfigOverrides: new Dictionary<string, string>()));
+
+        Assert.Contains("exactly one", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Cell_Rejects_Neither_Path_Nor_Key()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new Cell(
+            Id: "X",
+            Shell: "pwsh-7.4",
+            Workload: "w",
+            Kpi: "throughput_bytes_per_sec",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>()));
+
+        Assert.Contains("exactly one", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 }
