@@ -7,10 +7,16 @@ namespace WinttyBench.Tests;
 public class CellTests
 {
     [Fact]
-    public void StarredCells_Contains_Eight_After_C2_Split()
+    public void StarredCells_All_Ids_Are_Unique()
     {
+        // BenchHost dispatches per cell via Single(c => c.Id == ...); a
+        // duplicate Id silently breaks lookup. Pin the uniqueness invariant
+        // rather than the cell count, so additive splits (future C3a/C3b
+        // etc.) don't require touching this test.
         var all = StarredCells.All;
-        Assert.Equal(8, all.Count);
+        Assert.Equal(all.Count, all.Select(c => c.Id).Distinct().Count());
+        Assert.Contains(all, c => c.Id == "C2a");
+        Assert.Contains(all, c => c.Id == "C2b");
         Assert.Contains(all, c => c.Id == "C10");
         Assert.Contains(all, c => c.Id == "C11");
     }

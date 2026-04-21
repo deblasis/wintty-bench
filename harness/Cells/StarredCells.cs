@@ -18,11 +18,9 @@ public static class StarredCells
             FixtureKey: null,
             WinttyConfigOverrides: Empty),
 
-        // C2 split into C2a (pwsh) + C2b (wsl) after the 2026-04-21
-        // scrolling-degradation investigation. Same fixture through both
-        // shells hits ~2k B/s on pwsh-on-ConPTY and ~97k B/s on WSL `cat`
-        // on the same Wintty binary -- the ~50x gap is the user-shell floor,
-        // not a Wintty scroll-path cost.
+        // C2 is split into C2a (pwsh, ~2k B/s user-shell floor) and C2b
+        // (wsl `cat`, ~97k B/s fast path) on the same fixture and binary;
+        // the ~50x gap is the pwsh+ConPTY ceiling, not a wintty cost.
         new Cell(
             Id: "C2a",
             Shell: "pwsh-7.4",
