@@ -110,10 +110,10 @@ public static class BenchHost
                 var run = MeasurementRunner.RunThroughputAsync(cell, parsed.TargetExePath, profile, resolver).GetAwaiter().GetResult();
                 var samples = run.Samples;
                 var trimmed = profile.Discarded.Contains("last")
-                    ? ThroughputKpi.TrimFirstAndLast(samples)
+                    ? KpiStats.TrimFirstAndLast(samples)
                     : samples.Skip(profile.Discarded.Count).ToArray();
 
-                var kpiResult = new ThroughputKpi().ComputeFromSamples(trimmed, run.FixtureBytes);
+                var kpiResult = new ThroughputKpi().ComputeFromSamples(trimmed);
 
                 var envelope = new ResultEnvelope(
                     SchemaVersion: 2,

@@ -68,13 +68,21 @@ public static class MeasurementRunner
 
             if (!isWarmup)
             {
-                samples.Add(hung
-                    ? new IterationSample(Value: null, Hung: true)
-                    : new IterationSample(Value: sw.Elapsed.TotalSeconds, Hung: false));
+                if (hung)
+                {
+                    samples.Add(new IterationSample(Value: null, Hung: true));
+                }
+                else
+                {
+                    // Convert wall-seconds to bytes/sec at sample-emit time so
+                    // the stats layer downstream stays unit-agnostic.
+                    var bytesPerSec = handle.SizeBytes / sw.Elapsed.TotalSeconds;
+                    samples.Add(new IterationSample(Value: bytesPerSec, Hung: false));
+                }
             }
         }
 
-        return new ThroughputRunResult(samples, handle.SizeBytes);
+        return new ThroughputRunResult(samples);
     }
 
     private static void WaitForSentinel(string sentinelPath, TimeSpan timeout)
@@ -140,4 +148,4 @@ public static class MeasurementRunner
     }
 }
 
-public sealed record ThroughputRunResult(IReadOnlyList<IterationSample> Samples, long FixtureBytes);
+public sealed record ThroughputRunResult(IReadOnlyList<IterationSample> Samples);

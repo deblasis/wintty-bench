@@ -4,10 +4,13 @@ public interface IKpi
 {
     string Name { get; }
 
-    KpiResult ComputeFromSamples(IReadOnlyList<IterationSample> samples, long fixtureBytes);
+    // Samples arrive in the KPI's final unit (bytes/sec for throughput,
+    // seconds for startup, bytes for RSS). Per-KPI runners own the conversion
+    // from raw measurement (wall-clock, peak-reading) into final units before
+    // emitting the sample. This keeps the stats layer unit-agnostic.
+    KpiResult ComputeFromSamples(IReadOnlyList<IterationSample> samples);
 }
 
-// ValueP50/P95/P99/Stddev are null when all samples hung (source = "degraded").
 public sealed record KpiResult(
     double? ValueP50,
     double? ValueP95,
