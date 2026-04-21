@@ -7,6 +7,10 @@ using WinttyBench.Launchers;
 
 namespace WinttyBench.Runners;
 
+// Wintty's WinUI 3 shell does not quit on last-window-closed on Windows
+// even with quit-after-last-window-closed=true in config, so the harness
+// drives the lifecycle itself: wait for a sentinel file that the shell
+// script writes on its last line, then stop the clock and kill Wintty.
 public sealed class ThroughputRunner : IKpiRunner
 {
     public async Task<IReadOnlyList<IterationSample>> RunAsync(
@@ -45,6 +49,12 @@ public sealed class ThroughputRunner : IKpiRunner
             var hung = false;
             try
             {
+                // Only TimeoutException maps to a hung-sample; any other throw
+                // (e.g. OperationCanceledException from a future cancellation
+                // caller) bubbles out. The finally block still disposes launch
+                // and stops the stopwatch, so resources are clean on abort;
+                // dropping partial samples is the right contract because a
+                // cancelled run should fail loud, not return a truncated list.
                 SentinelWaiter.WaitForSentinel(sentinelPath, SentinelWaiter.DefaultExitTimeout);
             }
             catch (TimeoutException)
@@ -78,6 +88,11 @@ public sealed class ThroughputRunner : IKpiRunner
 
     private static string BuildShellCommandForCell(Cell cell, string fixtureShellPath, string sentinelPath)
     {
+        // Ghostty's Windows termio wraps any command containing cmd.exe
+        // metacharacters ('|', '&', '<', '>', '(', ')', '^', '%', '!') in
+        // `cmd.exe /c ...`, which mangles nested quotes. Put the shell body
+        // in a temp script file instead so the `command = ...` value in
+        // the config is a plain argv with no shell metacharacters.
         var scriptsDir = Path.Combine(Path.GetTempPath(), "wintty-bench-scripts");
         Directory.CreateDirectory(scriptsDir);
 
@@ -95,6 +110,8 @@ public sealed class ThroughputRunner : IKpiRunner
         var body = string.Create(CultureInfo.InvariantCulture,
             $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
         File.WriteAllText(scriptPath, body);
+        // -NoProfile skips ~1-2s of profile loading per launch. -NonInteractive
+        // guarantees no hidden prompt can wedge the measurement.
         return string.Create(CultureInfo.InvariantCulture,
             $"pwsh -NoProfile -NonInteractive -NoLogo -File {scriptPath}");
     }
@@ -103,6 +120,10 @@ public sealed class ThroughputRunner : IKpiRunner
     {
         var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.sh");
         var sentinelWsl = ToWslMountPath(sentinelPath);
+        // LF line endings: bash under WSL rejects CRLF script lines. The
+        // Replace is defensive — string.Create with \n literals never inserts
+        // CRLF today, but a future edit that switches to a template file or
+        // verbatim string could, and this keeps the invariant loud.
         var body = string.Create(CultureInfo.InvariantCulture,
             $"cat '{fixtureWslPath}'\ntouch '{sentinelWsl}'\nexit\n");
         File.WriteAllText(scriptPath, body.Replace("\r\n", "\n", StringComparison.Ordinal));
@@ -113,6 +134,9 @@ public sealed class ThroughputRunner : IKpiRunner
 
     private static string ToWslMountPath(string windowsPath)
     {
+        // C:\foo\bar -> /mnt/c/foo/bar
+        // Assumes an absolute drive-letter path; UNC paths (\\server\share\...)
+        // are not supported. Only callers pass %TEMP%-derived paths today.
         var drive = char.ToLowerInvariant(windowsPath[0]);
         var rest = windowsPath[2..].Replace('\\', '/');
         return string.Create(CultureInfo.InvariantCulture, $"/mnt/{drive}{rest}");
