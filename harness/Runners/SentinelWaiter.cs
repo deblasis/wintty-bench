@@ -1,7 +1,6 @@
 namespace WinttyBench.Runners;
 
 // Shared sentinel-file polling used by ThroughputRunner and StartupRunner.
-// Extracted from MeasurementRunner so both runners use one loop.
 public static class SentinelWaiter
 {
     // Default for the `timeout` arg of WaitForSentinel — pass directly, e.g.
