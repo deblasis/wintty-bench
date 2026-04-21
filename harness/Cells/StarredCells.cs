@@ -18,9 +18,23 @@ public static class StarredCells
             FixtureKey: null,
             WinttyConfigOverrides: Empty),
 
+        // C2 split into C2a (pwsh) + C2b (wsl) after the 2026-04-21
+        // scrolling-degradation investigation. Same fixture through both
+        // shells hits ~2k B/s on pwsh-on-ConPTY and ~97k B/s on WSL `cat`
+        // on the same Wintty binary -- the ~50x gap is the user-shell floor,
+        // not a Wintty scroll-path cost.
         new Cell(
-            Id: "C2",
+            Id: "C2a",
             Shell: "pwsh-7.4",
+            Workload: "vtebench_scrolling",
+            Kpi: "throughput_bytes_per_sec",
+            FixturePath: "fixtures/vtebench/scrolling.txt",
+            FixtureKey: null,
+            WinttyConfigOverrides: Empty),
+
+        new Cell(
+            Id: "C2b",
+            Shell: "wsl-ubuntu-24.04",
             Workload: "vtebench_scrolling",
             Kpi: "throughput_bytes_per_sec",
             FixturePath: "fixtures/vtebench/scrolling.txt",

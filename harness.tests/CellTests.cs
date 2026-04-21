@@ -7,10 +7,10 @@ namespace WinttyBench.Tests;
 public class CellTests
 {
     [Fact]
-    public void StarredCells_Contains_Seven_After_C10_C11_Added()
+    public void StarredCells_Contains_Eight_After_C2_Split()
     {
         var all = StarredCells.All;
-        Assert.Equal(7, all.Count);
+        Assert.Equal(8, all.Count);
         Assert.Contains(all, c => c.Id == "C10");
         Assert.Contains(all, c => c.Id == "C11");
     }
@@ -39,15 +39,27 @@ public class CellTests
     }
 
     [Fact]
-    public void C2_Targets_Pwsh_Vtebench_Scrolling_Throughput()
+    public void C2a_Targets_Pwsh_Vtebench_Scrolling_Throughput()
     {
-        var c2 = StarredCells.All.Single(c => c.Id == "C2");
+        var c2a = StarredCells.All.Single(c => c.Id == "C2a");
 
-        Assert.Equal("pwsh-7.4", c2.Shell);
-        Assert.Equal("vtebench_scrolling", c2.Workload);
-        Assert.Equal("throughput_bytes_per_sec", c2.Kpi);
-        Assert.Equal("fixtures/vtebench/scrolling.txt", c2.FixturePath);
-        Assert.Null(c2.FixtureKey);
+        Assert.Equal("pwsh-7.4", c2a.Shell);
+        Assert.Equal("vtebench_scrolling", c2a.Workload);
+        Assert.Equal("throughput_bytes_per_sec", c2a.Kpi);
+        Assert.Equal("fixtures/vtebench/scrolling.txt", c2a.FixturePath);
+        Assert.Null(c2a.FixtureKey);
+    }
+
+    [Fact]
+    public void C2b_Targets_Wsl_Vtebench_Scrolling_Throughput()
+    {
+        var c2b = StarredCells.All.Single(c => c.Id == "C2b");
+
+        Assert.Equal("wsl-ubuntu-24.04", c2b.Shell);
+        Assert.Equal("vtebench_scrolling", c2b.Workload);
+        Assert.Equal("throughput_bytes_per_sec", c2b.Kpi);
+        Assert.Equal("fixtures/vtebench/scrolling.txt", c2b.FixturePath);
+        Assert.Null(c2b.FixtureKey);
     }
 
     [Fact]

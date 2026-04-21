@@ -15,16 +15,17 @@ Captured 2026-04-21 against wintty `windows@30482d8` (CI mode, ~30% GHA-equivale
 | Cell | Shell | Workload | Fixture size | p50 throughput |
 |------|------------------|--------------------------|--------------|----------------|
 | C1   | pwsh-7.4         | vtebench dense_cells     | 2.57 MB      | 870,751 B/s    |
-| C2   | pwsh-7.4         | vtebench scrolling       | 200 KB       | degraded       |
+| C2a  | pwsh-7.4         | vtebench scrolling       | 200 KB       | 2,104 B/s      |
+| C2b  | wsl-ubuntu-24.04 | vtebench scrolling       | 200 KB       | 96,841 B/s     |
 | C3   | pwsh-7.4         | cjk_jp_mixed_1mb         | 1 MB         | 128,520 B/s    |
 | C4   | wsl-ubuntu-24.04 | vtebench dense_cells     | 2.57 MB      | 998,836 B/s    |
 | C5   | wsl-ubuntu-24.04 | vtebench unicode         | 138 KB       | 67,190 B/s     |
 | C10  | wsl-ubuntu-24.04 | vtebench_cat_sustained   | 1 MB         | 23,142 B/s     |
 | C11  | wsl-ubuntu-24.04 | filtered_random_sustained| 1 MB         | 59,103 B/s     |
 
-C1, C2, C4, C5 fixtures were replaced from upstream shell-script wrappers to the actual byte streams vtebench produces; the numbers above are the fresh re-run. C3, C10, C11 are current steady-state signal. Generators for all vtebench fixtures live in `scripts/fixtures/make-vtebench-fixtures.sh`; generators for C10 and C11 live in `scripts/fixtures/make-c1{0,1}.sh` and cache under `$HOME/.cache/wintty-bench/` on WSL with a content-hashed sidecar.
+C1, C2a, C2b, C4, C5 fixtures were replaced from upstream shell-script wrappers to the actual byte streams vtebench produces; the numbers above are the fresh re-run. C3, C10, C11 are current steady-state signal. Generators for all vtebench fixtures live in `scripts/fixtures/make-vtebench-fixtures.sh`; generators for C10 and C11 live in `scripts/fixtures/make-c1{0,1}.sh` and cache under `$HOME/.cache/wintty-bench/` on WSL with a content-hashed sidecar.
 
-C2 lands as `degraded` (schema v2 `source=degraded`, nullable p50) because 5 of 9 measured iterations exceeded the 2-minute per-iteration shell timeout. The 4 completing iterations landed at ~1,700 B/s, consistent with pwsh `Get-Content -Raw | Write-Host` streaming 100,001 short lines. Investigating whether this is a Wintty scroll-path cost or a pwsh `Write-Host` cost is a separate workstream.
+C2 was split into C2a (pwsh) and C2b (wsl) after a 2026-04-21 probe: the same 200 KB `y\n` scroll fixture hits ~2k B/s through pwsh-on-ConPTY and ~97k B/s through WSL `cat` on the same Wintty binary. The ~50x gap is the user-shell floor (three pwsh writer APIs -- `Write-Host`, `[Console]::Out.Write`, `Out-Host` -- all landed within ~8%), not a Wintty scroll-path cost.
 
 Marketing-grade numbers coming in a later plan.
 
