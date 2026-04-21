@@ -28,7 +28,8 @@ public class BenchHostArgsTests
         var parsed = BenchHost.ParseArgs(args);
 
         Assert.Contains("C1", parsed.Cells);
-        Assert.Contains("C2", parsed.Cells);
+        Assert.Contains("C2a", parsed.Cells);
+        Assert.Contains("C2b", parsed.Cells);
         Assert.Contains("C3", parsed.Cells);
         Assert.Contains("C4", parsed.Cells);
     }

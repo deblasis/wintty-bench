@@ -18,9 +18,21 @@ public static class StarredCells
             FixtureKey: null,
             WinttyConfigOverrides: Empty),
 
+        // C2 is split into C2a (pwsh, ~2k B/s user-shell floor) and C2b
+        // (wsl `cat`, ~97k B/s fast path) on the same fixture and binary;
+        // the ~50x gap is the pwsh+ConPTY ceiling, not a wintty cost.
         new Cell(
-            Id: "C2",
+            Id: "C2a",
             Shell: "pwsh-7.4",
+            Workload: "vtebench_scrolling",
+            Kpi: "throughput_bytes_per_sec",
+            FixturePath: "fixtures/vtebench/scrolling.txt",
+            FixtureKey: null,
+            WinttyConfigOverrides: Empty),
+
+        new Cell(
+            Id: "C2b",
+            Shell: "wsl-ubuntu-24.04",
             Workload: "vtebench_scrolling",
             Kpi: "throughput_bytes_per_sec",
             FixturePath: "fixtures/vtebench/scrolling.txt",
