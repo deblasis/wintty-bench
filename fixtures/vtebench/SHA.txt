@@ -1,7 +1,20 @@
-ead80032e57dee2e75f0b51f2ea67528647d9944
-Source: https://github.com/alacritty/vtebench/tree/ead80032e57dee2e75f0b51f2ea67528647d9944/benchmarks
+vtebench SHA: ead80032e57dee2e75f0b51f2ea67528647d9944
+Generator: scripts/fixtures/make-vtebench-fixtures.sh
+Geometry for dense_cells: 120 columns x 32 rows (matches MeasurementRunner)
 
-Files used (vtebench reorganized; no short.txt exists at this SHA):
-  dense_cells.txt  <- benchmarks/dense_cells/benchmark
-  scrolling.txt    <- benchmarks/scrolling/benchmark
-  unicode.txt      <- benchmarks/unicode/benchmark
+Provenance:
+  dense_cells.txt  <- scripts/fixtures/make-vtebench-fixtures.sh (emulates benchmarks/dense_cells/benchmark at 120x32)
+  scrolling.txt    <- benchmarks/scrolling/setup (printf 'y\n' x 100001)
+  unicode.txt      <- benchmarks/unicode/symbols (verbatim)
+
+Sizes:
+  dense_cells.txt  2695758 bytes
+  scrolling.txt     200002 bytes
+  unicode.txt       138296 bytes
+
+SHA256:
+  dense_cells.txt  00f6414f59c59f7d0a60d243c80f15400879635cf2b26e35a4ad17161ddd3369
+  scrolling.txt    4377ba180b1a908816151943507e62b07ff71b9c044a3f620976701b45c20210
+  unicode.txt      0650c4a97837d04d459492b601ea1d0d563517853525a8657a11a4bdd2d60fea
+
+Regenerate: bash scripts/fixtures/make-vtebench-fixtures.sh
