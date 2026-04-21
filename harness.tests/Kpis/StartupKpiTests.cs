@@ -21,6 +21,7 @@ public class StartupKpiTests
         var r = new StartupKpi().ComputeFromSamples(samples);
         Assert.Equal(1.5, r.ValueP50!.Value, precision: 3);
         Assert.Equal("stopwatch", r.Source);
+        Assert.Equal(4, r.RawIterations.Count);
     }
 
     [Fact]
