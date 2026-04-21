@@ -4,6 +4,7 @@ public static class KpiFactory
 {
     public static IKpi For(string kpiName)
     {
+        ArgumentNullException.ThrowIfNull(kpiName);
         return kpiName switch
         {
             "throughput_bytes_per_sec" => new ThroughputKpi(),
