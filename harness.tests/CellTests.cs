@@ -124,18 +124,18 @@ public class CellTests
     }
 
     [Fact]
-    public void Cell_With_Fixture_Less_Kpi_Allows_Both_Fields_Null()
+    public void Cell_Ctor_Accepts_Valid_Fixture_Bearing_Cell()
     {
-        // Phase A introduces the relaxation with an empty fixture-less-KPI
-        // set; no cell actually uses it yet. Phase B adds "startup_seconds".
-        // This test pins the mechanism by exercising an off-list KPI via
-        // a placeholder. The test is strengthened in Phase B when
-        // "startup_seconds" is on the list.
+        // Smoke test: the fixture-bearing happy path still constructs.
+        // Phase A relaxes the ctor to permit fixture-less KPIs when the
+        // Kpi name is in Cell.FixtureLessKpis, but that set is empty at A4.
+        // Phase B adds "startup_seconds" and introduces a real fixture-less
+        // test named Cell_With_Fixture_Less_Kpi_Allows_Both_Fields_Null.
         var cell = new Cell(
             Id: "X",
             Shell: "pwsh-7.4",
             Workload: "w",
-            Kpi: "throughput_bytes_per_sec",  // still fixture-bearing in A
+            Kpi: "throughput_bytes_per_sec",
             FixturePath: "fixtures/vtebench/dense_cells.txt",
             FixtureKey: null,
             WinttyConfigOverrides: new Dictionary<string, string>());
