@@ -11,7 +11,10 @@ public sealed record Cell
     // future non-fixture KPIs (e.g. idle-cpu) extend this set.
     // Defined inline on Cell rather than referenced from KpiFactory to avoid
     // a Cells -> Kpis circular dependency.
-    private static readonly HashSet<string> FixtureLessKpis = new(StringComparer.Ordinal);
+    private static readonly HashSet<string> FixtureLessKpis = new(StringComparer.Ordinal)
+    {
+        "startup_seconds",
+    };
 
     public Cell(
         string Id,
