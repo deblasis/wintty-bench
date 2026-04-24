@@ -6,6 +6,25 @@ using WinttyBench.Launchers;
 
 namespace WinttyBench.Runners;
 
+// Samples peak RSS (Process.WorkingSet64) of the Wintty process while a
+// WSL `cat <fixture>` workload drives ingest. Each iteration launches
+// Wintty, polls WorkingSet64 every SamplingCadence (500ms) for up to
+// SamplingWindow (10s), records the high-water mark, then disposes the
+// launch (JobObject + tree-kill via LaunchHandle.Dispose). No sentinel:
+// RSS is a sampled KPI, not an event KPI, so a "done" signal would
+// measure time-to-last-byte (throughput's job) not steady-state memory.
+//
+// Why these constants:
+// - 10s window is long enough to reach steady-state RSS under the 1 MB
+//   cat fixture Plan 2B ships; longer adds noise without new signal.
+// - 500ms cadence is tight enough to catch the peak, loose enough not
+//   to perturb the measurement itself.
+// - MinAliveBeforeSampling = 1s catches "Wintty crashed out of init";
+//   anything under that window gets marked Hung: true.
+//
+// Bounds: no per-run wall-clock ceiling. Worst case is
+// (WarmupIters + MeasuredIters) * SamplingWindow. CI callers size
+// MeasuredIters so worst-case fits the cell budget.
 public sealed class MemoryRssRunner : IKpiRunner
 {
     private static readonly TimeSpan SamplingWindow = TimeSpan.FromSeconds(10);
@@ -55,9 +74,20 @@ public sealed class MemoryRssRunner : IKpiRunner
                             diedEarly = true;
                         break;
                     }
-                    launch.Process.Refresh();  // required before WorkingSet64
-                    var rss = launch.Process.WorkingSet64;
-                    if (rss > peakRss) peakRss = rss;
+                    try
+                    {
+                        launch.Process.Refresh();  // required before WorkingSet64
+                        var rss = launch.Process.WorkingSet64;
+                        if (rss > peakRss) peakRss = rss;
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // TOCTOU: process exited between HasExited check and WorkingSet64
+                        // read. Treat as clean exit, not as an iteration-killing error.
+                        if (DateTime.UtcNow - samplingStart < MinAliveBeforeSampling)
+                            diedEarly = true;
+                        break;
+                    }
                     Thread.Sleep(SamplingCadence);
                 }
             }
