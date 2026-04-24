@@ -23,4 +23,36 @@ public class IterationSampleTests
         Assert.Contains("\"value\":1.5", json, StringComparison.Ordinal);
         Assert.Contains("\"hung\":false", json, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Ctor_Rejects_Hung_With_NonNull_Value()
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => new IterationSample(Value: 1.0, Hung: true));
+        Assert.Contains("Value", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ctor_Rejects_NotHung_With_Null_Value()
+    {
+        var ex = Assert.Throws<ArgumentException>(
+            () => new IterationSample(Value: null, Hung: false));
+        Assert.Contains("Value", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Ctor_Accepts_Valid_Hung()
+    {
+        var s = new IterationSample(Value: null, Hung: true);
+        Assert.True(s.Hung);
+        Assert.Null(s.Value);
+    }
+
+    [Fact]
+    public void Ctor_Accepts_Valid_NotHung()
+    {
+        var s = new IterationSample(Value: 1.5, Hung: false);
+        Assert.False(s.Hung);
+        Assert.Equal(1.5, s.Value);
+    }
 }

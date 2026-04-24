@@ -52,7 +52,7 @@ public sealed class FixtureResolver
                 throw new FileNotFoundException($"Static fixture not found: {abs}");
             var size = new FileInfo(abs).Length;
             var shellPath = cell.Shell == "wsl-ubuntu-24.04"
-                ? ToWslMountPath(abs)
+                ? WslPaths.ToWslMountPath(abs)
                 : abs;
             return new FixtureHandle(shellPath, size);
         }
@@ -83,19 +83,12 @@ public sealed class FixtureResolver
             var scriptWinAbs = Path.GetFullPath(Path.Combine(_repoRoot, $"scripts/fixtures/make-{key}.sh"));
             if (!File.Exists(scriptWinAbs))
                 throw new FileNotFoundException($"Generator script not found: {scriptWinAbs}");
-            var scriptWsl = ToWslMountPath(scriptWinAbs);
+            var scriptWsl = WslPaths.ToWslMountPath(scriptWinAbs);
             await _wsl.RunBashScriptAsync($"bash '{scriptWsl}' {targetSize}");
             var newHash = await _wsl.ComputeSha256Async(wslFixture);
             await _wsl.RunBashScriptAsync($"printf '{newHash}' > '{sidecar}'");
         }
 
         return new FixtureHandle(wslFixture, targetSize);
-    }
-
-    private static string ToWslMountPath(string windowsPath)
-    {
-        var drive = char.ToLowerInvariant(windowsPath[0]);
-        var rest = windowsPath[2..].Replace('\\', '/');
-        return $"/mnt/{drive}{rest}";
     }
 }

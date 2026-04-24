@@ -5,24 +5,22 @@ using WinttyBench.Fixtures;
 using WinttyBench.Kpis;
 using WinttyBench.Launchers;
 
-namespace WinttyBench;
+namespace WinttyBench.Runners;
 
-public static class MeasurementRunner
+// Wintty's WinUI 3 shell does not quit on last-window-closed on Windows
+// even with quit-after-last-window-closed=true in config, so the harness
+// drives the lifecycle itself: wait for a sentinel file that the shell
+// script writes on its last line, then stop the clock and kill Wintty.
+public sealed class ThroughputRunner : IKpiRunner
 {
-    // Wintty's WinUI 3 shell does not quit on last-window-closed on Windows
-    // even with quit-after-last-window-closed=true in config, so the harness
-    // drives the lifecycle itself: wait for a sentinel file that the shell
-    // script writes on its last line, then stop the clock and kill Wintty.
-    private static readonly TimeSpan ShellExitTimeout = TimeSpan.FromMinutes(2);
-    private static readonly TimeSpan SentinelPollInterval = TimeSpan.FromMilliseconds(25);
-
-    public static async Task<ThroughputRunResult> RunThroughputAsync(
+    public async Task<IReadOnlyList<IterationSample>> RunAsync(
         Cell cell,
         string winttyExe,
         FairnessProfile profile,
         FixtureResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(cell);
+        ArgumentException.ThrowIfNullOrEmpty(winttyExe);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(resolver);
 
@@ -52,7 +50,13 @@ public static class MeasurementRunner
             var hung = false;
             try
             {
-                WaitForSentinel(sentinelPath, ShellExitTimeout);
+                // Only TimeoutException maps to a hung-sample; any other throw
+                // (e.g. OperationCanceledException from a future cancellation
+                // caller) bubbles out. The finally block still disposes launch
+                // and stops the stopwatch, so resources are clean on abort;
+                // dropping partial samples is the right contract because a
+                // cancelled run should fail loud, not return a truncated list.
+                SentinelWaiter.WaitForSentinel(sentinelPath, SentinelWaiter.DefaultExitTimeout);
             }
             catch (TimeoutException)
             {
@@ -68,24 +72,19 @@ public static class MeasurementRunner
 
             if (!isWarmup)
             {
-                samples.Add(hung
-                    ? new IterationSample(Value: null, Hung: true)
-                    : new IterationSample(Value: sw.Elapsed.TotalSeconds, Hung: false));
+                if (hung)
+                {
+                    samples.Add(new IterationSample(Value: null, Hung: true));
+                }
+                else
+                {
+                    var bytesPerSec = handle.SizeBytes / sw.Elapsed.TotalSeconds;
+                    samples.Add(new IterationSample(Value: bytesPerSec, Hung: false));
+                }
             }
         }
 
-        return new ThroughputRunResult(samples, handle.SizeBytes);
-    }
-
-    private static void WaitForSentinel(string sentinelPath, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (File.Exists(sentinelPath)) return;
-            Thread.Sleep(SentinelPollInterval);
-        }
-        throw new TimeoutException($"Sentinel '{sentinelPath}' not observed in {timeout}; shell did not finish.");
+        return samples;
     }
 
     private static string BuildShellCommandForCell(Cell cell, string fixtureShellPath, string sentinelPath)
@@ -109,6 +108,11 @@ public static class MeasurementRunner
     private static string BuildPwshCommand(Cell cell, string fixtureAbs, string scriptsDir, string sentinelPath)
     {
         var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.ps1");
+        // Single-quoted pwsh literals assume no apostrophes in fixtureAbs or
+        // sentinelPath. Current callers pass repo-rooted fixture paths and
+        // %TEMP%-derived sentinel paths; both are apostrophe-free on Windows.
+        // If a future cell points at a path containing `'`, this needs `''`
+        // doubling to stay literal.
         var body = string.Create(CultureInfo.InvariantCulture,
             $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
         File.WriteAllText(scriptPath, body);
@@ -121,23 +125,16 @@ public static class MeasurementRunner
     private static string BuildWslCommand(Cell cell, string fixtureWslPath, string scriptsDir, string sentinelPath)
     {
         var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.sh");
-        var sentinelWsl = ToWslMountPath(sentinelPath);
-        // Note: LF line endings; bash under WSL rejects CRLF script lines.
+        var sentinelWsl = WslPaths.ToWslMountPath(sentinelPath);
+        // LF line endings: bash under WSL rejects CRLF script lines. The
+        // Replace is defensive — string.Create with \n literals never inserts
+        // CRLF today, but a future edit that switches to a template file or
+        // verbatim string could, and this keeps the invariant loud.
         var body = string.Create(CultureInfo.InvariantCulture,
             $"cat '{fixtureWslPath}'\ntouch '{sentinelWsl}'\nexit\n");
         File.WriteAllText(scriptPath, body.Replace("\r\n", "\n", StringComparison.Ordinal));
-        var scriptWsl = ToWslMountPath(scriptPath);
+        var scriptWsl = WslPaths.ToWslMountPath(scriptPath);
         return string.Create(CultureInfo.InvariantCulture,
             $"wsl -d Ubuntu-24.04 bash {scriptWsl}");
     }
-
-    private static string ToWslMountPath(string windowsPath)
-    {
-        // C:\foo\bar -> /mnt/c/foo/bar
-        var drive = char.ToLowerInvariant(windowsPath[0]);
-        var rest = windowsPath[2..].Replace('\\', '/');
-        return string.Create(CultureInfo.InvariantCulture, $"/mnt/{drive}{rest}");
-    }
 }
-
-public sealed record ThroughputRunResult(IReadOnlyList<IterationSample> Samples, long FixtureBytes);

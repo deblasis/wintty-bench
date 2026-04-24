@@ -2,6 +2,7 @@ using System.Globalization;
 using WinttyBench.Cells;
 using WinttyBench.Fixtures;
 using WinttyBench.Kpis;
+using WinttyBench.Runners;
 
 namespace WinttyBench;
 
@@ -107,13 +108,15 @@ public static class BenchHost
                 Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
                     $"[{cellId}] {cell.Shell} x {cell.Workload} ({cell.Kpi})"));
 
-                var run = MeasurementRunner.RunThroughputAsync(cell, parsed.TargetExePath, profile, resolver).GetAwaiter().GetResult();
-                var samples = run.Samples;
+                var runner = KpiRunnerFactory.For(cell);
+                var samples = runner.RunAsync(cell, parsed.TargetExePath, profile, resolver).GetAwaiter().GetResult();
+
                 var trimmed = profile.Discarded.Contains("last")
-                    ? ThroughputKpi.TrimFirstAndLast(samples)
+                    ? KpiStats.TrimFirstAndLast(samples)
                     : samples.Skip(profile.Discarded.Count).ToArray();
 
-                var kpiResult = new ThroughputKpi().ComputeFromSamples(trimmed, run.FixtureBytes);
+                var kpi = KpiFactory.For(cell.Kpi);
+                var kpiResult = kpi.ComputeFromSamples(trimmed);
 
                 var envelope = new ResultEnvelope(
                     SchemaVersion: 2,
@@ -139,7 +142,7 @@ public static class BenchHost
                     System.Text.Json.JsonSerializer.Serialize(envelope,
                         ResultSchemaContext.Default.ResultEnvelope));
                 var p50Display = kpiResult.ValueP50.HasValue
-                    ? string.Create(CultureInfo.InvariantCulture, $"{kpiResult.ValueP50.Value:N0} B/s")
+                    ? string.Create(CultureInfo.InvariantCulture, $"{kpiResult.ValueP50.Value:N0} {kpi.UnitHint}")
                     : "degraded";
                 Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
                     $"[{cellId}] wrote {outPath} (p50 = {p50Display})"));

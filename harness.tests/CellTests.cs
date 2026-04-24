@@ -109,7 +109,7 @@ public class CellTests
     }
 
     [Fact]
-    public void Cell_Rejects_Neither_Path_Nor_Key()
+    public void Cell_Rejects_Neither_Path_Nor_Key_For_Fixture_Bearing_Kpi()
     {
         var ex = Assert.Throws<ArgumentException>(() => new Cell(
             Id: "X",
@@ -120,7 +120,30 @@ public class CellTests
             FixtureKey: null,
             WinttyConfigOverrides: new Dictionary<string, string>()));
 
-        Assert.Contains("exactly one", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("fixture-bearing", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // When the KPI is unknown (or not yet registered as fixture-less),
+        // the error should point a Phase B/C author at Cell.FixtureLessKpis
+        // so they don't misdiagnose it as a missing fixture path.
+        Assert.Contains("FixtureLessKpis", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Cell_Ctor_Accepts_Valid_Fixture_Bearing_Cell()
+    {
+        // Smoke test: the fixture-bearing happy path still constructs.
+        // Phase A relaxes the ctor to permit fixture-less KPIs when the
+        // Kpi name is in Cell.FixtureLessKpis, but that set is empty at A4.
+        // Phase B adds "startup_seconds" and introduces a real fixture-less
+        // test named Cell_With_Fixture_Less_Kpi_Allows_Both_Fields_Null.
+        var cell = new Cell(
+            Id: "X",
+            Shell: "pwsh-7.4",
+            Workload: "w",
+            Kpi: "throughput_bytes_per_sec",
+            FixturePath: "fixtures/vtebench/dense_cells.txt",
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>());
+        Assert.Equal("X", cell.Id);
     }
 
     [Fact]
