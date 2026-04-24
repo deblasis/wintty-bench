@@ -11,6 +11,12 @@ public static class SentinelWaiter
     // a shorter loop is justified (tests) or a longer one reduces overhead.
     public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(25);
 
+    // NOTE: blocks the calling thread via Thread.Sleep. Fine from the bench
+    // host which calls this through GetAwaiter().GetResult() on a dedicated
+    // harness thread, but do NOT call this from a thread-pool async context
+    // (it can pin a pool thread for up to `timeout`, starving other async
+    // work). A WaitForSentinelAsync variant using PeriodicTimer would be
+    // the right fix if a future caller needs to stay async.
     public static void WaitForSentinel(
         string sentinelPath,
         TimeSpan timeout,

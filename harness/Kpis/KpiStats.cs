@@ -39,7 +39,11 @@ public static class KpiStats
     public static IReadOnlyList<IterationSample> TrimFirstAndLast(IReadOnlyList<IterationSample> samples)
     {
         ArgumentNullException.ThrowIfNull(samples);
-        if (samples.Count <= 2) return samples;
+        // Always materialize a fresh array. The Count<=2 short-circuit used to
+        // return the caller's list unchanged; the asymmetry made callers wary
+        // of whether the result aliased its input. Consistent fresh copy
+        // removes the doubt at a cost of a few allocations on small inputs.
+        if (samples.Count <= 2) return samples.ToArray();
         return samples.Skip(1).Take(samples.Count - 2).ToArray();
     }
 
