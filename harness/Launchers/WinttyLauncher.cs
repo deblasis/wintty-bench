@@ -58,6 +58,8 @@ public sealed class WinttyLauncher : ILauncher
             }
             catch
             {
+                // Inner guard required: CA1416 does not flow the outer
+                // OperatingSystem.IsWindows() branch into this catch block.
                 if (OperatingSystem.IsWindows())
                 {
                     job?.Dispose();

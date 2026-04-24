@@ -28,6 +28,7 @@ public sealed class StartupRunner : IKpiRunner
         FixtureResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(cell);
+        ArgumentException.ThrowIfNullOrEmpty(winttyExe);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(resolver);
 
@@ -77,6 +78,10 @@ public sealed class StartupRunner : IKpiRunner
             }
         }
 
+        // NOTE: body is synchronous; see SentinelWaiter.WaitForSentinel note.
+        // Do not await from a thread-pool context - the GetAwaiter().GetResult()
+        // in BenchHost runs on a dedicated harness thread. Explicit type param
+        // is required: FromResult's inference sees List<T>, not IReadOnlyList<T>.
         return Task.FromResult<IReadOnlyList<IterationSample>>(samples);
     }
 
@@ -109,6 +114,8 @@ public sealed class StartupRunner : IKpiRunner
         // Exotic edge: if $PROFILE itself calls `exit`, pwsh terminates
         // before the prompt override is defined; the sentinel never fires
         // and the iteration records as Hung.
+        // Double any apostrophe to escape: pwsh single-quoted string literals
+        // use '' to encode a literal '.
         var escapedPath = sentinelPath.Replace("'", "''", StringComparison.Ordinal);
         var script =
             $"function global:prompt {{ New-Item -ItemType File -Force -Path '{escapedPath}' | Out-Null; exit }}";
