@@ -12,7 +12,7 @@ public static class KpiRunnerFactory
         {
             "throughput_bytes_per_sec" => new ThroughputRunner(),
             "startup_seconds" => new StartupRunner(),
-            // MemoryRssRunner added in Phase C.
+            "rss_peak_bytes" => new MemoryRssRunner(),
             _ => throw new NotSupportedException($"Unknown KPI '{cell.Kpi}' on cell '{cell.Id}'"),
         };
     }

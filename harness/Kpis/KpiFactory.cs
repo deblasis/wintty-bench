@@ -9,7 +9,7 @@ public static class KpiFactory
         {
             "throughput_bytes_per_sec" => new ThroughputKpi(),
             "startup_seconds" => new StartupKpi(),
-            // MemoryRssKpi added in Phase C.
+            "rss_peak_bytes" => new MemoryRssKpi(),
             _ => throw new NotSupportedException($"Unknown KPI '{kpiName}'"),
         };
     }

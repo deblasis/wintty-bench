@@ -24,4 +24,11 @@ public class KpiFactoryTests
         var kpi = KpiFactory.For("startup_seconds");
         Assert.IsType<StartupKpi>(kpi);
     }
+
+    [Fact]
+    public void For_Rss_Returns_MemoryRssKpi()
+    {
+        var kpi = KpiFactory.For("rss_peak_bytes");
+        Assert.IsType<MemoryRssKpi>(kpi);
+    }
 }
