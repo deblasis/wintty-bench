@@ -20,7 +20,7 @@ public sealed class WinttyJobObject : IDisposable
 
     public WinttyJobObject()
     {
-        _handle = CreateJobObjectW(lpJobAttributes: 0, lpName: null);
+        _handle = CreateJobObjectW(lpJobAttributes: nint.Zero, lpName: null);
         if (_handle == 0)
         {
             throw new InvalidOperationException(
@@ -67,6 +67,11 @@ public sealed class WinttyJobObject : IDisposable
         ArgumentNullException.ThrowIfNull(process);
         ObjectDisposedException.ThrowIf(_handle == 0, this);
 
+        // Uses process.Handle (raw IntPtr) rather than SafeProcessHandle.
+        // Callers must keep `process` alive until after WinttyJobObject is
+        // Disposed; WinttyLauncher holds both refs via LaunchHandle and
+        // respects that ordering. If that invariant ever changes, swap to
+        // process.SafeHandle + DangerousAddRef/Release.
         if (!AssignProcessToJobObject(_handle, process.Handle))
         {
             throw new InvalidOperationException(
@@ -133,8 +138,10 @@ public sealed class WinttyJobObject : IDisposable
 
     // Plain DllImport (not LibraryImport) to avoid pulling partial-class +
     // AllowUnsafeBlocks project-level changes into the harness just for four
-    // functions. All signatures use blittable types (nint/uint/bool via
-    // MarshalAs) so AOT analysis stays clean.
+    // functions. MarshalAs(UnmanagedType.Bool) adds a tiny runtime-marshal
+    // shim for the BOOL returns; it is AOT/trim-safe, just not truly
+    // "blittable" in the strict sense. If the surface grows beyond four
+    // functions, migrate to LibraryImport for zero-overhead source-gen stubs.
     [DllImport("kernel32.dll", EntryPoint = "CreateJobObjectW", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern nint CreateJobObjectW(nint lpJobAttributes, string? lpName);
 

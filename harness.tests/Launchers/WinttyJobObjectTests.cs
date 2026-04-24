@@ -18,7 +18,7 @@ public class WinttyJobObjectTests
     [Trait("OS", "Windows")]
     public void Disposing_Job_Kills_Assigned_Process()
     {
-        if (!OperatingSystem.IsWindows()) return;
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "JobObject is Windows-only.");
 
         // timeout /t is a native Windows binary that sleeps. Using /nobreak
         // /t 30 ensures it waits 30s without responding to keypresses, so
@@ -63,7 +63,7 @@ public class WinttyJobObjectTests
     [Trait("OS", "Windows")]
     public void Disposing_Job_Kills_Grandchild_Process()
     {
-        if (!OperatingSystem.IsWindows()) return;
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "JobObject is Windows-only.");
 
         // Key scenario: Wintty's real-world failure mode. The launched
         // process is `cmd.exe` which spawns a GRANDCHILD (another cmd via
@@ -125,13 +125,13 @@ public class WinttyJobObjectTests
 
             var after = CountTimeoutProcessesStartedAfter(procStart);
 
-            if (grandchildSeen)
+            if (!grandchildSeen)
             {
-                Assert.Equal(0, after);
+                Assert.Skip("Grandchild `timeout` process did not appear within 2s; " +
+                    "containment test has no subject. Core guarantee is still covered " +
+                    "by Disposing_Job_Kills_Assigned_Process.");
             }
-            // else: the test was racy and never saw the grandchild - pass
-            // silently rather than flake. The primary `Disposing_Job_Kills
-            // _Assigned_Process` test already covers the core guarantee.
+            Assert.Equal(0, after);
         }
         finally
         {

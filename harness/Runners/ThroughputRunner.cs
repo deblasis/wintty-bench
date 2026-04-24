@@ -20,6 +20,7 @@ public sealed class ThroughputRunner : IKpiRunner
         FixtureResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(cell);
+        ArgumentException.ThrowIfNullOrEmpty(winttyExe);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(resolver);
 
@@ -107,6 +108,11 @@ public sealed class ThroughputRunner : IKpiRunner
     private static string BuildPwshCommand(Cell cell, string fixtureAbs, string scriptsDir, string sentinelPath)
     {
         var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.ps1");
+        // Single-quoted pwsh literals assume no apostrophes in fixtureAbs or
+        // sentinelPath. Current callers pass repo-rooted fixture paths and
+        // %TEMP%-derived sentinel paths; both are apostrophe-free on Windows.
+        // If a future cell points at a path containing `'`, this needs `''`
+        // doubling to stay literal.
         var body = string.Create(CultureInfo.InvariantCulture,
             $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
         File.WriteAllText(scriptPath, body);
@@ -119,7 +125,7 @@ public sealed class ThroughputRunner : IKpiRunner
     private static string BuildWslCommand(Cell cell, string fixtureWslPath, string scriptsDir, string sentinelPath)
     {
         var scriptPath = Path.Combine(scriptsDir, $"{cell.Id}.sh");
-        var sentinelWsl = ToWslMountPath(sentinelPath);
+        var sentinelWsl = WslPaths.ToWslMountPath(sentinelPath);
         // LF line endings: bash under WSL rejects CRLF script lines. The
         // Replace is defensive — string.Create with \n literals never inserts
         // CRLF today, but a future edit that switches to a template file or
@@ -127,18 +133,8 @@ public sealed class ThroughputRunner : IKpiRunner
         var body = string.Create(CultureInfo.InvariantCulture,
             $"cat '{fixtureWslPath}'\ntouch '{sentinelWsl}'\nexit\n");
         File.WriteAllText(scriptPath, body.Replace("\r\n", "\n", StringComparison.Ordinal));
-        var scriptWsl = ToWslMountPath(scriptPath);
+        var scriptWsl = WslPaths.ToWslMountPath(scriptPath);
         return string.Create(CultureInfo.InvariantCulture,
             $"wsl -d Ubuntu-24.04 bash {scriptWsl}");
-    }
-
-    private static string ToWslMountPath(string windowsPath)
-    {
-        // C:\foo\bar -> /mnt/c/foo/bar
-        // Assumes an absolute drive-letter path; UNC paths (\\server\share\...)
-        // are not supported. Only callers pass %TEMP%-derived paths today.
-        var drive = char.ToLowerInvariant(windowsPath[0]);
-        var rest = windowsPath[2..].Replace('\\', '/');
-        return string.Create(CultureInfo.InvariantCulture, $"/mnt/{drive}{rest}");
     }
 }

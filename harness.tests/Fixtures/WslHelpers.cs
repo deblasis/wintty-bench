@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using WinttyBench.Fixtures;
 
 namespace WinttyBench.Tests.Fixtures;
 
@@ -22,10 +23,6 @@ internal static class WslHelpers
         return stdout;
     }
 
-    public static string ToWslMountPath(string windowsPath)
-    {
-        var drive = char.ToLowerInvariant(windowsPath[0]);
-        var rest = windowsPath[2..].Replace('\\', '/');
-        return $"/mnt/{drive}{rest}";
-    }
+    public static string ToWslMountPath(string windowsPath) =>
+        WslPaths.ToWslMountPath(windowsPath);
 }

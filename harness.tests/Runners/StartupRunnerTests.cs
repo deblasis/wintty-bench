@@ -27,11 +27,8 @@ public class StartupRunnerTests
     [Trait("OS", "Windows")]
     public void BuildPwshStartupCommand_FiresSentinelInPwsh_DirectProcess()
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            // xUnit v3 has no Skip-from-code; just no-op on non-Windows.
-            return;
-        }
+        Assert.SkipUnless(OperatingSystem.IsWindows(),
+            "pwsh-7 + Wintty is Windows-only for this bench");
 
         var sentinelPath = Path.Combine(
             Path.GetTempPath(),
