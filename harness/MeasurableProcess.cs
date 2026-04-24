@@ -41,6 +41,10 @@ public sealed class MeasurableProcess
         return null;
     }
 
+    public void Refresh() => _process.Refresh();
+
+    public long WorkingSet64 => _process.WorkingSet64;
+
     public void Kill()
     {
         try

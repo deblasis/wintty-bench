@@ -9,6 +9,7 @@ public static class KpiRunnerFactory
     // does not allocate a fresh instance per cell.
     private static readonly ThroughputRunner s_throughput = new();
     private static readonly StartupRunner s_startup = new();
+    private static readonly MemoryRssRunner s_memoryRss = new();
 
     public static IKpiRunner For(Cell cell)
     {
@@ -17,7 +18,7 @@ public static class KpiRunnerFactory
         {
             "throughput_bytes_per_sec" => s_throughput,
             "startup_seconds" => s_startup,
-            // MemoryRssRunner added in Phase C.
+            "rss_peak_bytes" => s_memoryRss,
             _ => throw new NotSupportedException($"Unknown KPI '{cell.Kpi}' on cell '{cell.Id}'"),
         };
     }

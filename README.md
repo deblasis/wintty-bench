@@ -43,6 +43,16 @@ C8 measures cold `Wintty.exe` -> pwsh `$PROFILE` load -> first prompt ready, und
 
 The numbers above are from a developer box (Ryzen 7 PRO 5750G, 16 GB, Windows 11 26200) with a full OhMyPosh prompt and posh-git loaded, so they tilt toward the warm end of what users see. CI runners without prompt addons are expected to clock lower.
 
+## Memory (Plan 2B)
+
+Captured 2026-04-24 against wintty `windows@59d1f5d` (CI mode, 1 warmup + 9 measured iterations per cell).
+
+| Cell | Shell            | Workload             | Fixture         | p50 peak RSS | p95 peak RSS |
+|------|------------------|----------------------|-----------------|--------------|--------------|
+| C9   | wsl-ubuntu-24.04 | rss_under_ingest_10s | C11 PRNG (1 MB) | 222.9 MB     | 223.5 MB     |
+
+C9 measures `Wintty.exe` `WorkingSet64` sampled at 500 ms cadence over a 10 s WSL `cat`-driven ingest of the C11 filtered-random fixture. WSL is picked as the driver because it's faster and less variable than pwsh on ConPTY; the KPI targets the Wintty process itself, so shell choice only affects ingest speed, not what is measured. Raw iteration spread was ~2 MB (232.6-234.5 MB, 0.27% CV).
+
 ## Quick start
 
 ```powershell

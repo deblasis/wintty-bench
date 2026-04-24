@@ -49,4 +49,19 @@ public class KpiRunnerFactoryTests
         var runner = KpiRunnerFactory.For(cell);
         Assert.IsType<StartupRunner>(runner);
     }
+
+    [Fact]
+    public void For_Rss_Cell_Returns_MemoryRssRunner()
+    {
+        var cell = new Cell(
+            Id: "C9",
+            Shell: "wsl-ubuntu-24.04",
+            Workload: "rss_under_ingest_10s",
+            Kpi: "rss_peak_bytes",
+            FixturePath: null,
+            FixtureKey: "c11",
+            WinttyConfigOverrides: new Dictionary<string, string>());
+        var runner = KpiRunnerFactory.For(cell);
+        Assert.IsType<MemoryRssRunner>(runner);
+    }
 }

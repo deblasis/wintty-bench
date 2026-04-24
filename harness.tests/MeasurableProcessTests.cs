@@ -35,4 +35,37 @@ public class MeasurableProcessTests
         Assert.NotNull(result);
         Assert.Equal(self.Id, result.ProcessId);
     }
+
+    [Fact]
+    public void WorkingSet64_Returns_Positive_For_Current_Process()
+    {
+        var self = System.Diagnostics.Process.GetCurrentProcess();
+        var mp = MeasurableProcess.FromProcess(self, expectedName: self.ProcessName);
+
+        mp.Refresh();
+        Assert.True(mp.WorkingSet64 > 0);
+    }
+
+    [Fact]
+    public void Refresh_Updates_Cached_WorkingSet()
+    {
+        var self = System.Diagnostics.Process.GetCurrentProcess();
+        var mp = MeasurableProcess.FromProcess(self, expectedName: self.ProcessName);
+
+        mp.Refresh();
+        var first = mp.WorkingSet64;
+        // Allocate some memory to force WorkingSet to change.
+        var junk = new byte[16 * 1024 * 1024];
+        junk[0] = 1; junk[^1] = 2;  // touch pages
+        mp.Refresh();
+        var second = mp.WorkingSet64;
+
+        Assert.True(first > 0);
+        Assert.True(second > 0);
+        // Don't assert second > first — Windows working set is not monotonic
+        // across Refresh calls; the invariant we care about is that Refresh
+        // doesn't throw and returns a plausible (> 0) number. Retain the
+        // junk reference so it isn't collected before the second Refresh.
+        GC.KeepAlive(junk);
+    }
 }

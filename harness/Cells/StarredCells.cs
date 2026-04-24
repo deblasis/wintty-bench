@@ -104,5 +104,18 @@ public static class StarredCells
             FixturePath: null,
             FixtureKey: "c11",
             WinttyConfigOverrides: Empty),
+
+        // C9: wintty peak RSS under 10s WSL-driven ingest of the C11 PRNG
+        // fixture. Shell is WSL because it's a faster/less-variable driver;
+        // the KPI measures Wintty.exe, not the child shell, so shell choice
+        // is a throughput-of-ingest concern, not a KPI-semantics concern.
+        new Cell(
+            Id: "C9",
+            Shell: "wsl-ubuntu-24.04",
+            Workload: "rss_under_ingest_10s",
+            Kpi: "rss_peak_bytes",
+            FixturePath: null,
+            FixtureKey: "c11",
+            WinttyConfigOverrides: Empty),
     ];
 }

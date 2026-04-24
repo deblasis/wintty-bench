@@ -17,6 +17,7 @@ public class CellTests
         Assert.Equal(all.Count, all.Select(c => c.Id).Distinct().Count());
         Assert.Contains(all, c => c.Id == "C2a");
         Assert.Contains(all, c => c.Id == "C2b");
+        Assert.Contains(all, c => c.Id == "C9");
         Assert.Contains(all, c => c.Id == "C10");
         Assert.Contains(all, c => c.Id == "C11");
     }
@@ -221,5 +222,16 @@ public class CellTests
         Assert.Equal("startup_seconds", c8.Kpi);
         Assert.Null(c8.FixturePath);
         Assert.Null(c8.FixtureKey);
+    }
+
+    [Fact]
+    public void C9_Targets_Wsl_Rss_Under_Ingest()
+    {
+        var c9 = StarredCells.All.Single(c => c.Id == "C9");
+        Assert.Equal("wsl-ubuntu-24.04", c9.Shell);
+        Assert.Equal("rss_under_ingest_10s", c9.Workload);
+        Assert.Equal("rss_peak_bytes", c9.Kpi);
+        Assert.Null(c9.FixturePath);
+        Assert.Equal("c11", c9.FixtureKey);
     }
 }
