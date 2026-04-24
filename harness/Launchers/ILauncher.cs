@@ -20,8 +20,20 @@ public sealed class LaunchHandle : IDisposable
     public required MeasurableProcess Process { get; init; }
     public required string ConfigRoot { get; init; }
 
+    // Optional JobObject that contains Process and all its descendants.
+    // When set, disposing it is the canonical kill path: CloseHandle with
+    // KILL_ON_JOB_CLOSE reaps everything in one shot, even descendants that
+    // have already been re-parented away from the launched process. Falls
+    // back to Process.Kill(entireProcessTree) on platforms / launchers that
+    // cannot use a job (e.g. WtLauncher hands off to an MSIX app).
+    public IDisposable? Job { get; init; }
+
     public void Dispose()
     {
+        // Dispose the job first: closing the handle with KILL_ON_JOB_CLOSE
+        // drops the whole tree synchronously. Process.Kill() is then either
+        // a no-op (already gone) or a belt-and-braces fallback.
+        Job?.Dispose();
         Process.Kill();
         try
         {

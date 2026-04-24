@@ -34,4 +34,19 @@ public class KpiRunnerFactoryTests
             WinttyConfigOverrides: new Dictionary<string, string>());
         Assert.Throws<NotSupportedException>(() => KpiRunnerFactory.For(cell));
     }
+
+    [Fact]
+    public void For_Startup_Cell_Returns_StartupRunner()
+    {
+        var cell = new Cell(
+            Id: "C8",
+            Shell: "pwsh-7.4",
+            Workload: "shell_startup",
+            Kpi: "startup_seconds",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>());
+        var runner = KpiRunnerFactory.For(cell);
+        Assert.IsType<StartupRunner>(runner);
+    }
 }

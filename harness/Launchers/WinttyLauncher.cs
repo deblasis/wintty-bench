@@ -40,11 +40,42 @@ public sealed class WinttyLauncher : ILauncher
         var proc = Process.Start(startInfo)
             ?? throw new InvalidOperationException($"Failed to start wintty at {request.TargetExePath}");
 
+        // Attach to a JobObject with KILL_ON_JOB_CLOSE BEFORE Wintty has had
+        // time to spawn its child shell. Process.Start returns synchronously
+        // after CreateProcess, so there is an inherent race; in practice
+        // Wintty's libghostty surface init happens tens of ms later, which
+        // is enough. Children spawned after assignment inherit the job on
+        // Win8+ (nested-jobs is default). The job is what guarantees
+        // descendants die when we dispose the handle - Process.Kill
+        // (entireProcessTree: true) cannot reach re-parented orphans.
+        WinttyJobObject? job = null;
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                job = new WinttyJobObject();
+                job.AssignProcess(proc);
+            }
+            catch
+            {
+                // Inner guard required: CA1416 does not flow the outer
+                // OperatingSystem.IsWindows() branch into this catch block.
+                if (OperatingSystem.IsWindows())
+                {
+                    job?.Dispose();
+                }
+                try { proc.Kill(entireProcessTree: true); }
+                catch (InvalidOperationException) { }
+                throw;
+            }
+        }
+
         // Wintty is self-hosted: the spawned exe IS the measurable process.
         return new LaunchHandle
         {
             Process = MeasurableProcess.FromProcess(proc, ExpectedProcessName),
             ConfigRoot = configRoot,
+            Job = job,
         };
     }
 

@@ -147,6 +147,50 @@ public class CellTests
     }
 
     [Fact]
+    public void Cell_With_Startup_Seconds_Kpi_Allows_Both_Fields_Null()
+    {
+        var cell = new Cell(
+            Id: "C8",
+            Shell: "pwsh-7.4",
+            Workload: "shell_startup",
+            Kpi: "startup_seconds",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>());
+        Assert.Equal("C8", cell.Id);
+        Assert.Null(cell.FixturePath);
+        Assert.Null(cell.FixtureKey);
+    }
+
+    [Fact]
+    public void Cell_With_Startup_Seconds_Kpi_Rejects_FixturePath()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new Cell(
+            Id: "C8",
+            Shell: "pwsh-7.4",
+            Workload: "shell_startup",
+            Kpi: "startup_seconds",
+            FixturePath: "fixtures/vtebench/dense_cells.txt",
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>()));
+        Assert.Contains("fixture-less", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Cell_With_Startup_Seconds_Kpi_Rejects_FixtureKey()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new Cell(
+            Id: "C8",
+            Shell: "pwsh-7.4",
+            Workload: "shell_startup",
+            Kpi: "startup_seconds",
+            FixturePath: null,
+            FixtureKey: "vtebench_dense_cells",
+            WinttyConfigOverrides: new Dictionary<string, string>()));
+        Assert.Contains("fixture-less", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void C10_Is_Wsl_Generated_With_FixtureKey()
     {
         var c10 = StarredCells.All.Single(c => c.Id == "C10");
@@ -166,5 +210,16 @@ public class CellTests
         Assert.Equal("throughput_bytes_per_sec", c11.Kpi);
         Assert.Null(c11.FixturePath);
         Assert.Equal("c11", c11.FixtureKey);
+    }
+
+    [Fact]
+    public void C8_Targets_Pwsh_Shell_Startup_With_No_Fixture()
+    {
+        var c8 = StarredCells.All.Single(c => c.Id == "C8");
+        Assert.Equal("pwsh-7.4", c8.Shell);
+        Assert.Equal("shell_startup", c8.Workload);
+        Assert.Equal("startup_seconds", c8.Kpi);
+        Assert.Null(c8.FixturePath);
+        Assert.Null(c8.FixtureKey);
     }
 }

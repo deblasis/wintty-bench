@@ -1,7 +1,7 @@
 using WinttyBench.Kpis;
 using Xunit;
 
-namespace WinttyBench.Tests;
+namespace WinttyBench.Tests.Kpis;
 
 public class ThroughputKpiTests
 {

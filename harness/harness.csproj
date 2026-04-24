@@ -9,4 +9,8 @@
     <IsAotCompatible>true</IsAotCompatible>
     <PublishAot>false</PublishAot>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="harness.tests" />
+  </ItemGroup>
 </Project>
