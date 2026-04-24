@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using System.Globalization;
+using System.Text;
 using WinttyBench.Cells;
 using WinttyBench.Fixtures;
 using WinttyBench.Kpis;
@@ -80,18 +80,39 @@ public sealed class StartupRunner : IKpiRunner
         return Task.FromResult<IReadOnlyList<IterationSample>>(samples);
     }
 
-    private static string BuildPwshStartupCommand(string sentinelPath)
+    // Internal so harness.tests can drive this directly with Process.Start (no
+    // Wintty round-trip) and assert the sentinel fires. That end-to-end check
+    // is the only thing that catches pwsh arg-parsing / encoding regressions
+    // before they turn into silent Hung iterations at bench time.
+    internal static string BuildPwshStartupCommand(string sentinelPath)
     {
         // No -NoProfile: $PROFILE loads in the normal sequence and its cost is
         // part of the "time to first prompt" number we want to measure.
-        // `function global:prompt` overrides the prompt after profile load,
-        // so the sentinel fires at first prompt-ready and exits.
-        // Exotic edge: if $PROFILE itself calls `exit`, pwsh terminates before
-        // the prompt override is defined; the sentinel never fires and the
-        // iteration records as Hung.
-        // Single-quote escape: pwsh single-quoted strings escape ' as ''.
+        // -NoExit is required: without it, pwsh runs the block and exits
+        // before going interactive, so the `function global:prompt` override
+        // is defined but never *called*. With -NoExit the flow is $PROFILE
+        // -> run startup block (defines override) -> interactive loop ->
+        // first prompt call -> our override fires sentinel + exits.
+        //
+        // -EncodedCommand (base64 UTF-16LE) not -Command, for a very specific
+        // reason: the Wintty config file takes `command = <shell-string>`
+        // which goes through multiple string-parsing layers (Ghostty config
+        // parser, shell argv split, pwsh arg parser). Each of those can
+        // mangle `$`, quotes, and braces differently. Observed symptom when
+        // passing a raw -Command string: Ghostty's config parser ate the
+        // `$env:WINTTY_BENCH_SENTINEL` tokens as variable references and
+        // expanded them to empty, so pwsh received `-Command "='...'; ..."`
+        // which is a syntax error and left pwsh stuck at a `>>` continuation
+        // prompt. Base64 is pure ASCII with no `$`, no quotes, no braces -
+        // every layer passes it through verbatim. pwsh decodes it natively.
+        //
+        // Exotic edge: if $PROFILE itself calls `exit`, pwsh terminates
+        // before the prompt override is defined; the sentinel never fires
+        // and the iteration records as Hung.
         var escapedPath = sentinelPath.Replace("'", "''", StringComparison.Ordinal);
-        return string.Create(CultureInfo.InvariantCulture,
-            $"pwsh -NoLogo -Command \"$env:WINTTY_BENCH_SENTINEL='{escapedPath}'; function global:prompt {{ New-Item -ItemType File -Force -Path $env:WINTTY_BENCH_SENTINEL | Out-Null; exit }}\"");
+        var script =
+            $"function global:prompt {{ New-Item -ItemType File -Force -Path '{escapedPath}' | Out-Null; exit }}";
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        return $"pwsh -NoLogo -NoExit -EncodedCommand {encoded}";
     }
 }
