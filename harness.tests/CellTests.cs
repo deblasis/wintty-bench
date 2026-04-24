@@ -173,6 +173,20 @@ public class CellTests
     }
 
     [Fact]
+    public void Cell_With_Startup_Seconds_Kpi_Rejects_FixtureKey()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => new Cell(
+            Id: "C8",
+            Shell: "pwsh-7.4",
+            Workload: "shell_startup",
+            Kpi: "startup_seconds",
+            FixturePath: null,
+            FixtureKey: "vtebench_dense_cells",
+            WinttyConfigOverrides: new Dictionary<string, string>()));
+        Assert.Contains("fixture-less", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void C10_Is_Wsl_Generated_With_FixtureKey()
     {
         var c10 = StarredCells.All.Single(c => c.Id == "C10");
