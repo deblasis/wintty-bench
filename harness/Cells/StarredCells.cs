@@ -92,5 +92,17 @@ public static class StarredCells
             FixturePath: null,
             FixtureKey: "c11",
             WinttyConfigOverrides: Empty),
+
+        // C8: pwsh startup latency. Default $PROFILE loads (no -NoProfile);
+        // profile load IS what we measure here. Different discipline from
+        // C1/C2a throughput cells, which strip profile noise with -NoProfile.
+        new Cell(
+            Id: "C8",
+            Shell: "pwsh-7.4",
+            Workload: "shell_startup",
+            Kpi: "startup_seconds",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: Empty),
     ];
 }

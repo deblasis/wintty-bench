@@ -11,7 +11,8 @@ public static class KpiRunnerFactory
         return cell.Kpi switch
         {
             "throughput_bytes_per_sec" => new ThroughputRunner(),
-            // StartupRunner + MemoryRssRunner added in Phases B and C.
+            "startup_seconds" => new StartupRunner(),
+            // MemoryRssRunner added in Phase C.
             _ => throw new NotSupportedException($"Unknown KPI '{cell.Kpi}' on cell '{cell.Id}'"),
         };
     }

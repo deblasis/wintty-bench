@@ -17,4 +17,11 @@ public class KpiFactoryTests
     {
         Assert.Throws<NotSupportedException>(() => KpiFactory.For("bogus"));
     }
+
+    [Fact]
+    public void For_Startup_Returns_StartupKpi()
+    {
+        var kpi = KpiFactory.For("startup_seconds");
+        Assert.IsType<StartupKpi>(kpi);
+    }
 }

@@ -8,7 +8,8 @@ public static class KpiFactory
         return kpiName switch
         {
             "throughput_bytes_per_sec" => new ThroughputKpi(),
-            // StartupKpi + MemoryRssKpi added in Phases B and C.
+            "startup_seconds" => new StartupKpi(),
+            // MemoryRssKpi added in Phase C.
             _ => throw new NotSupportedException($"Unknown KPI '{kpiName}'"),
         };
     }

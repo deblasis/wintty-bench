@@ -207,4 +207,15 @@ public class CellTests
         Assert.Null(c11.FixturePath);
         Assert.Equal("c11", c11.FixtureKey);
     }
+
+    [Fact]
+    public void C8_Targets_Pwsh_Shell_Startup_With_No_Fixture()
+    {
+        var c8 = StarredCells.All.Single(c => c.Id == "C8");
+        Assert.Equal("pwsh-7.4", c8.Shell);
+        Assert.Equal("shell_startup", c8.Workload);
+        Assert.Equal("startup_seconds", c8.Kpi);
+        Assert.Null(c8.FixturePath);
+        Assert.Null(c8.FixtureKey);
+    }
 }
