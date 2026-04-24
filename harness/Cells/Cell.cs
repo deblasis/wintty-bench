@@ -32,9 +32,13 @@ public sealed record Cell
                 pathSet ? nameof(FixturePath) : nameof(FixtureKey));
 
         if (!isFixtureLess && pathSet == keySet)
-            throw new ArgumentException(
-                "Cell with fixture-bearing KPI must set exactly one of FixturePath or FixtureKey",
+        {
+            var msg = pathSet
+                ? $"Cell with fixture-bearing KPI '{Kpi}' must set exactly one of FixturePath or FixtureKey, not both"
+                : $"Cell with fixture-bearing KPI '{Kpi}' must set exactly one of FixturePath or FixtureKey; if '{Kpi}' is intentionally fixture-less, register it in Cell.FixtureLessKpis";
+            throw new ArgumentException(msg,
                 pathSet ? nameof(FixturePath) : nameof(FixtureKey));
+        }
 
         this.Id = Id;
         this.Shell = Shell;

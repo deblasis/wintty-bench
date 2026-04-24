@@ -121,6 +121,10 @@ public class CellTests
             WinttyConfigOverrides: new Dictionary<string, string>()));
 
         Assert.Contains("fixture-bearing", ex.Message, StringComparison.OrdinalIgnoreCase);
+        // When the KPI is unknown (or not yet registered as fixture-less),
+        // the error should point a Phase B/C author at Cell.FixtureLessKpis
+        // so they don't misdiagnose it as a missing fixture path.
+        Assert.Contains("FixtureLessKpis", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
