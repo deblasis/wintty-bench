@@ -12,6 +12,8 @@ public class MemoryRssRunnerTests
     [Fact(Skip = "Integration: requires real Wintty.exe + WSL. Unskip locally and set WINTTY_EXE.")]
     public async Task MemoryRssRunner_EmitsPositiveRss_ForC9Shape()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Wintty is Windows-only");
+
         var exe = Environment.GetEnvironmentVariable("WINTTY_EXE")
             ?? throw new InvalidOperationException("Set WINTTY_EXE to the Wintty.exe path");
 

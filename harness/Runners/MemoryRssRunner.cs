@@ -38,6 +38,7 @@ public sealed class MemoryRssRunner : IKpiRunner
         FixtureResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(cell);
+        ArgumentException.ThrowIfNullOrEmpty(winttyExe);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(resolver);
 
@@ -68,6 +69,9 @@ public sealed class MemoryRssRunner : IKpiRunner
             {
                 while (DateTime.UtcNow < deadline)
                 {
+                    // HasExited after a successful Process.Start is documented not
+                    // to throw; the inner catch narrowly covers Refresh()/WorkingSet64
+                    // TOCTOU only.
                     if (launch.Process.HasExited)
                     {
                         if (DateTime.UtcNow - samplingStart < MinAliveBeforeSampling)

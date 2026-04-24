@@ -17,6 +17,7 @@ public class CellTests
         Assert.Equal(all.Count, all.Select(c => c.Id).Distinct().Count());
         Assert.Contains(all, c => c.Id == "C2a");
         Assert.Contains(all, c => c.Id == "C2b");
+        Assert.Contains(all, c => c.Id == "C9");
         Assert.Contains(all, c => c.Id == "C10");
         Assert.Contains(all, c => c.Id == "C11");
     }
