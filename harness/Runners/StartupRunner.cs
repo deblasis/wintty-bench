@@ -7,6 +7,18 @@ using WinttyBench.Launchers;
 
 namespace WinttyBench.Runners;
 
+// Measures "time to first prompt" for a shell spawned under Wintty. Each
+// iteration: spawn Wintty -> pwsh overrides `function global:prompt` after
+// $PROFILE load -> override writes a sentinel file on first prompt-ready
+// and exits pwsh -> StartupRunner polls for the sentinel and stops its
+// stopwatch. Hung iterations hit the SentinelWaiter timeout and record
+// Hung: true. Profile load is intentionally measured (no -NoProfile) so
+// the number reflects what the user experiences.
+//
+// Bounds: there is no per-run wall-clock ceiling. Worst case is
+// (WarmupIters + MeasuredIters) * SentinelWaiter.DefaultExitTimeout.
+// CI callers MUST size MeasuredIters so that hung-run worst-case fits
+// the CI cell budget (15 min under FairnessProfile.Ci()).
 public sealed class StartupRunner : IKpiRunner
 {
     public Task<IReadOnlyList<IterationSample>> RunAsync(
@@ -17,6 +29,7 @@ public sealed class StartupRunner : IKpiRunner
     {
         ArgumentNullException.ThrowIfNull(cell);
         ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(resolver);
 
         var launcher = new WinttyLauncher();
         var totalIters = profile.WarmupIters + profile.MeasuredIters;
@@ -73,6 +86,9 @@ public sealed class StartupRunner : IKpiRunner
         // part of the "time to first prompt" number we want to measure.
         // `function global:prompt` overrides the prompt after profile load,
         // so the sentinel fires at first prompt-ready and exits.
+        // Exotic edge: if $PROFILE itself calls `exit`, pwsh terminates before
+        // the prompt override is defined; the sentinel never fires and the
+        // iteration records as Hung.
         // Single-quote escape: pwsh single-quoted strings escape ' as ''.
         var escapedPath = sentinelPath.Replace("'", "''", StringComparison.Ordinal);
         return string.Create(CultureInfo.InvariantCulture,
