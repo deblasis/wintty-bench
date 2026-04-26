@@ -25,14 +25,16 @@ internal static class SendInputInterop
         public InputUnion U;
     }
 
-    [StructLayout(LayoutKind.Explicit)]
+    // Size = 32: Win32's INPUT union is sized to MOUSEINPUT (the largest
+    // variant: 32 bytes on x64). Without an explicit Size, declaring only
+    // KEYBDINPUT (24 bytes after alignment) gives a 32-byte INPUT instead of
+    // the 40 bytes Win32 expects, and SendInput rejects with ERROR_INVALID_
+    // PARAMETER. The padding is logically the slack the other variants would
+    // occupy; we never read it.
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
     public struct InputUnion
     {
         [FieldOffset(0)] public KEYBDINPUT ki;
-        // The full InputUnion in Win32 also has MOUSEINPUT and HARDWAREINPUT.
-        // KEYBDINPUT is the largest at x86 and matches at x64 layout, so we
-        // declare only it; the size of InputUnion still matches Win32's
-        // because all variants are <= the size we declare here at x64.
     }
 
     [StructLayout(LayoutKind.Sequential)]
