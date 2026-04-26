@@ -31,14 +31,16 @@ public sealed class WgcSession : IDisposable
     public int ClientHeightPx { get; }
     public long QpcFrequency { get; } = Stopwatch.Frequency;
 
-    // Fields wired up in subsequent steps (Task 16: D3D11 device + DXGI bridge,
-    // Task 17: GraphicsCaptureItem, Task 18: frame pool / capture session /
-    // staging texture / FrameArrived token). CS0169 is tolerated for now.
-#pragma warning disable CS0169 // The field is never used
+    // D3D11 device + DXGI-bridged IDirect3DDevice (Task 16).
     private nint _d3dDevice;
     private nint _d3dContext;
-    private nint _stagingTexture;
     private nint _graphicsDevice;
+
+    // Wired up in Task 17 (GraphicsCaptureItem) and Task 18 (frame pool /
+    // capture session / staging texture / FrameArrived token). CS0169 is
+    // tolerated until then.
+#pragma warning disable CS0169 // The field is never used
+    private nint _stagingTexture;
     private nint _captureItem;
     private nint _framePool;
     private nint _captureSession;
@@ -92,12 +94,79 @@ public sealed class WgcSession : IDisposable
         return session;
     }
 
-#pragma warning disable CA1822 // Mark members as static - body filled in Task 16.
     private void InitializeNative(nint hwnd)
     {
-        // Filled in by subsequent steps.
+        // Step 1: D3D11 device with BGRA support.
+        var hr = D3D11Interop.D3D11CreateDevice(
+            pAdapter: nint.Zero,
+            DriverType: D3D11Interop.D3D_DRIVER_TYPE_HARDWARE,
+            Software: nint.Zero,
+            Flags: D3D11Interop.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+            pFeatureLevels: nint.Zero,
+            FeatureLevels: 0,
+            SDKVersion: D3D11Interop.D3D11_SDK_VERSION,
+            ppDevice: out _d3dDevice,
+            pFeatureLevel: out _,
+            ppImmediateContext: out _d3dContext);
+        if (hr != 0)
+        {
+            // Fallback to WARP for VMs / headless boxes with no GPU driver.
+            hr = D3D11Interop.D3D11CreateDevice(
+                nint.Zero,
+                D3D11Interop.D3D_DRIVER_TYPE_WARP,
+                nint.Zero,
+                D3D11Interop.D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                nint.Zero, 0,
+                D3D11Interop.D3D11_SDK_VERSION,
+                out _d3dDevice, out _, out _d3dContext);
+            if (hr != 0)
+                throw new InvalidOperationException(
+                    $"D3D11CreateDevice (HARDWARE+WARP) failed: hr=0x{hr:X8}");
+        }
+
+        // Step 2: bridge D3D11 -> IDirect3DDevice (WGC's input type).
+        // _d3dDevice is an IUnknown*; QueryInterface for IDXGIDevice via the
+        // standard COM ID, then hand to CreateDirect3D11DeviceFromDXGIDevice.
+        var iidDxgiDevice = new Guid("54EC77FA-1377-44E6-8C32-88FD5F44C84C");
+        var hrQi = ComQueryInterface(_d3dDevice, iidDxgiDevice, out var dxgiDevice);
+        if (hrQi != 0)
+            throw new InvalidOperationException($"QI(IDXGIDevice) failed: hr=0x{hrQi:X8}");
+        try
+        {
+            hr = D3D11Interop.CreateDirect3D11DeviceFromDXGIDevice(dxgiDevice, out _graphicsDevice);
+            if (hr != 0)
+                throw new InvalidOperationException(
+                    $"CreateDirect3D11DeviceFromDXGIDevice failed: hr=0x{hr:X8}");
+        }
+        finally
+        {
+            ComRelease(dxgiDevice);
+        }
     }
-#pragma warning restore CA1822
+
+    // Helper: dispatch IUnknown::QueryInterface (vtable slot 0).
+    private static unsafe int ComQueryInterface(nint pUnk, Guid iid, out nint ppOut)
+    {
+        ppOut = nint.Zero;
+        var vtable = *(nint**)pUnk;
+        var qiPtr = vtable[0];
+        var qi = (delegate* unmanaged[Stdcall]<nint, Guid*, nint*, int>)qiPtr;
+        nint outPtr;
+        int hr;
+        hr = qi(pUnk, &iid, &outPtr);
+        ppOut = outPtr;
+        return hr;
+    }
+
+    // Helper: dispatch IUnknown::Release (vtable slot 2).
+    private static unsafe uint ComRelease(nint pUnk)
+    {
+        if (pUnk == nint.Zero) return 0;
+        var vtable = *(nint**)pUnk;
+        var relPtr = vtable[2];
+        var rel = (delegate* unmanaged[Stdcall]<nint, uint>)relPtr;
+        return rel(pUnk);
+    }
 
     public Task<CapturedFrame> NextFrameAsync(CancellationToken ct)
     {
@@ -106,6 +175,8 @@ public sealed class WgcSession : IDisposable
 
     public void Dispose()
     {
-        // Filled in by subsequent steps; for now, harmless.
+        if (_graphicsDevice != nint.Zero) { ComRelease(_graphicsDevice); _graphicsDevice = nint.Zero; }
+        if (_d3dContext != nint.Zero) { ComRelease(_d3dContext); _d3dContext = nint.Zero; }
+        if (_d3dDevice != nint.Zero) { ComRelease(_d3dDevice); _d3dDevice = nint.Zero; }
     }
 }
