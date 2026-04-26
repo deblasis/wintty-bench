@@ -21,7 +21,9 @@ public static class EnvProbe
             Cpu: cpu,
             Gpu: "unknown",  // deferred: DXGI enum, needs P/Invoke
             RamGb: ramGb,
-            Display: new DisplayCapture(1920, 1080, 60, 1.0));  // deferred: GetDeviceCaps, monitor enum
+#pragma warning disable CA1416 // RefreshRateProbe is Windows-only; this whole harness is Windows-only.
+            Display: new DisplayCapture(1920, 1080, WinttyBench.Input.RefreshRateProbe.GetPrimaryRefreshHz() ?? 60, 1.0));  // refresh_hz live; width/height/dpi still deferred
+#pragma warning restore CA1416
     }
 
     private static (string sha, string version) ProbeWinttyVersion(string exePath)
