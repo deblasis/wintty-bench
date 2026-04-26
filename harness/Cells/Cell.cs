@@ -5,15 +5,21 @@ namespace WinttyBench.Cells;
 // FixturePath: Plan 1 behavior, static path relative to repo root.
 // FixtureKey:  Plan 2A+ behavior, resolved at runtime by FixtureResolver
 //              using the active FairnessProfile's size table.
+//
+// MeasuredItersOverride: optional per-cell override of profile.MeasuredIters.
+// Set on cells whose KPI converges with a different sample count than the
+// throughput cells (e.g. C13 latency wants 30 to absorb compositor cadence
+// quantization). Null means use the profile's value.
 public sealed record Cell
 {
-    // KPIs that do not ingest a fixture. Plan 2B adds "startup_seconds";
-    // future non-fixture KPIs (e.g. idle-cpu) extend this set.
-    // Defined inline on Cell rather than referenced from KpiFactory to avoid
-    // a Cells -> Kpis circular dependency.
+    // KPIs that do not ingest a fixture. Plan 2B added "startup_seconds";
+    // Plan 2D adds "latency_keystroke_to_glyph_ms". Defined inline on Cell
+    // rather than referenced from KpiFactory to avoid a Cells -> Kpis
+    // circular dependency.
     private static readonly HashSet<string> FixtureLessKpis = new(StringComparer.Ordinal)
     {
         "startup_seconds",
+        "latency_keystroke_to_glyph_ms",
     };
 
     public Cell(
@@ -23,7 +29,8 @@ public sealed record Cell
         string Kpi,
         string? FixturePath,
         string? FixtureKey,
-        IReadOnlyDictionary<string, string> WinttyConfigOverrides)
+        IReadOnlyDictionary<string, string> WinttyConfigOverrides,
+        int? MeasuredItersOverride = null)
     {
         var pathSet = FixturePath is not null;
         var keySet = FixtureKey is not null;
@@ -43,6 +50,11 @@ public sealed record Cell
                 pathSet ? nameof(FixturePath) : nameof(FixtureKey));
         }
 
+        if (MeasuredItersOverride is { } o && o < 1)
+            throw new ArgumentOutOfRangeException(
+                nameof(MeasuredItersOverride),
+                "Must be >= 1 when set");
+
         this.Id = Id;
         this.Shell = Shell;
         this.Workload = Workload;
@@ -50,6 +62,7 @@ public sealed record Cell
         this.FixturePath = FixturePath;
         this.FixtureKey = FixtureKey;
         this.WinttyConfigOverrides = WinttyConfigOverrides;
+        this.MeasuredItersOverride = MeasuredItersOverride;
     }
 
     public string Id { get; init; }
@@ -59,4 +72,5 @@ public sealed record Cell
     public string? FixturePath { get; init; }
     public string? FixtureKey { get; init; }
     public IReadOnlyDictionary<string, string> WinttyConfigOverrides { get; init; }
+    public int? MeasuredItersOverride { get; init; }
 }
