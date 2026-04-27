@@ -36,12 +36,12 @@ public sealed class WgcSession : IDisposable
     private nint _d3dContext;
     private nint _graphicsDevice;
 
-    // Wired up in Task 17 (GraphicsCaptureItem) and Task 18 (frame pool /
+    // _captureItem wired in Task 17. Task 18 will wire the rest (frame pool /
     // capture session / staging texture / FrameArrived token). CS0169 is
-    // tolerated until then.
+    // tolerated for the still-unused fields until then.
+    private nint _captureItem;
 #pragma warning disable CS0169 // The field is never used
     private nint _stagingTexture;
-    private nint _captureItem;
     private nint _framePool;
     private nint _captureSession;
     private long _frameArrivedToken;
@@ -142,6 +142,56 @@ public sealed class WgcSession : IDisposable
         {
             ComRelease(dxgiDevice);
         }
+
+        // Step 3: GraphicsCaptureItem.CreateForWindow via IGraphicsCaptureItemInterop.
+        // RoGetActivationFactory expects the runtime-class name as an HSTRING.
+        var classNameHr = CombaseInterop.WindowsCreateString(
+            WgcInterop.GraphicsCaptureItem_ClassName,
+            (uint)WgcInterop.GraphicsCaptureItem_ClassName.Length,
+            out var classNameH);
+        if (classNameHr != 0)
+            throw new InvalidOperationException(
+                $"WindowsCreateString(GraphicsCaptureItem) failed: hr=0x{classNameHr:X8}");
+        try
+        {
+            var iid = WgcInterop.IID_IGraphicsCaptureItemInterop;
+            var hrFac = CombaseInterop.RoGetActivationFactory(classNameH, in iid, out var interopFactory);
+            if (hrFac != 0)
+                throw new InvalidOperationException(
+                    $"RoGetActivationFactory(IGraphicsCaptureItemInterop) failed: hr=0x{hrFac:X8}");
+            try
+            {
+                // IGraphicsCaptureItemInterop::CreateForWindow is vtable slot 3
+                // (slots 0-2 are IUnknown). Signature:
+                //   HRESULT CreateForWindow(HWND, REFIID, void**)
+                _captureItem = InvokeCreateForWindow(interopFactory, hwnd);
+                if (_captureItem == nint.Zero)
+                    throw new InvalidOperationException("CreateForWindow returned null IGraphicsCaptureItem");
+            }
+            finally
+            {
+                ComRelease(interopFactory);
+            }
+        }
+        finally
+        {
+            // HSTRING release; HRESULT discarded - failure here is benign on a
+            // dispose path and there is nothing actionable we could do with it.
+            _ = CombaseInterop.WindowsDeleteString(classNameH);
+        }
+    }
+
+    private static unsafe nint InvokeCreateForWindow(nint interopFactory, nint hwnd)
+    {
+        var vtable = *(nint**)interopFactory;
+        var createForWindowPtr = vtable[3]; // slot 3 after IUnknown's 0..2
+        var fn = (delegate* unmanaged[Stdcall]<nint, nint, Guid*, nint*, int>)createForWindowPtr;
+        var iid = WgcInterop.IID_IGraphicsCaptureItem;
+        nint outItem;
+        var hr = fn(interopFactory, hwnd, &iid, &outItem);
+        if (hr != 0)
+            throw new InvalidOperationException($"CreateForWindow failed: hr=0x{hr:X8}");
+        return outItem;
     }
 
     // Helper: dispatch IUnknown::QueryInterface (vtable slot 0).
@@ -175,6 +225,7 @@ public sealed class WgcSession : IDisposable
 
     public void Dispose()
     {
+        if (_captureItem != nint.Zero) { ComRelease(_captureItem); _captureItem = nint.Zero; }
         if (_graphicsDevice != nint.Zero) { ComRelease(_graphicsDevice); _graphicsDevice = nint.Zero; }
         if (_d3dContext != nint.Zero) { ComRelease(_d3dContext); _d3dContext = nint.Zero; }
         if (_d3dDevice != nint.Zero) { ComRelease(_d3dDevice); _d3dDevice = nint.Zero; }
