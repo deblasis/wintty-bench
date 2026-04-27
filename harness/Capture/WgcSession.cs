@@ -36,16 +36,13 @@ public sealed class WgcSession : IDisposable
     private nint _d3dContext;
     private nint _graphicsDevice;
 
-    // _captureItem wired in Task 17. Task 18 will wire the rest (frame pool /
-    // capture session / staging texture / FrameArrived token). CS0169 is
-    // tolerated for the still-unused fields until then.
+    // Wired across Tasks 17-18: CaptureItem, frame pool, capture session,
+    // staging texture, and FrameArrived event token.
     private nint _captureItem;
-#pragma warning disable CS0169 // The field is never used
     private nint _stagingTexture;
     private nint _framePool;
     private nint _captureSession;
     private long _frameArrivedToken;
-#pragma warning restore CS0169
 
     private readonly Channel<CapturedFrame> _frames = Channel.CreateBounded<CapturedFrame>(
         new BoundedChannelOptions(capacity: 1)
@@ -179,6 +176,65 @@ public sealed class WgcSession : IDisposable
             // dispose path and there is nothing actionable we could do with it.
             _ = CombaseInterop.WindowsDeleteString(classNameH);
         }
+
+        // Step 4: get IDirect3D11CaptureFramePoolStatics, call CreateFreeThreaded.
+        var poolClassHr = CombaseInterop.WindowsCreateString(
+            WgcInterop.Direct3D11CaptureFramePool_ClassName,
+            (uint)WgcInterop.Direct3D11CaptureFramePool_ClassName.Length,
+            out var poolClassH);
+        if (poolClassHr != 0)
+            throw new InvalidOperationException(
+                $"WindowsCreateString(FramePool) failed: hr=0x{poolClassHr:X8}");
+        try
+        {
+            var poolStaticsIid = WgcInterop.IID_IDirect3D11CaptureFramePoolStatics;
+            var hrPoolFac = CombaseInterop.RoGetActivationFactory(
+                poolClassH, in poolStaticsIid, out var poolStatics);
+            if (hrPoolFac != 0)
+                throw new InvalidOperationException(
+                    $"RoGetActivationFactory(IDirect3D11CaptureFramePoolStatics) failed: hr=0x{hrPoolFac:X8}");
+            try
+            {
+                _framePool = InvokeCreateFreeThreaded(
+                    poolStatics,
+                    _graphicsDevice,
+                    WgcInterop.DirectXPixelFormat_B8G8R8A8UIntNormalized,
+                    numberOfBuffers: 2,
+                    new WgcInterop.SizeInt32 { Width = ClientWidthPx, Height = ClientHeightPx });
+            }
+            finally
+            {
+                ComRelease(poolStatics);
+            }
+        }
+        finally
+        {
+            _ = CombaseInterop.WindowsDeleteString(poolClassH);
+        }
+
+        // Step 5: framePool.CreateCaptureSession(item).
+        _captureSession = InvokeCreateCaptureSession(_framePool, _captureItem);
+
+        // Step 6: pre-allocate the staging texture.
+        var desc = default(D3D11Interop.D3D11_TEXTURE2D_DESC);
+        desc.Width = (uint)ClientWidthPx;
+        desc.Height = (uint)ClientHeightPx;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = D3D11Interop.DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11Interop.D3D11_USAGE_STAGING;
+        desc.CPUAccessFlags = D3D11Interop.D3D11_CPU_ACCESS_READ;
+
+        // ID3D11Device::CreateTexture2D is vtable slot 5 (after IUnknown's 3).
+        // Signature: HRESULT CreateTexture2D(D3D11_TEXTURE2D_DESC*, D3D11_SUBRESOURCE_DATA*, ID3D11Texture2D**)
+        _stagingTexture = InvokeCreateTexture2D(_d3dDevice, ref desc);
+
+        // Step 7: hook FrameArrived. The handler does the readback synchronously.
+        _frameArrivedToken = InvokeAddFrameArrived(_framePool);
+
+        // Step 8: start capture.
+        InvokeStartCapture(_captureSession);
     }
 
     private static unsafe nint InvokeCreateForWindow(nint interopFactory, nint hwnd)
@@ -223,11 +279,257 @@ public sealed class WgcSession : IDisposable
         return _frames.Reader.ReadAsync(ct).AsTask();
     }
 
+    private static unsafe nint InvokeCreateFreeThreaded(
+        nint poolStatics, nint device, uint pixelFormat, int numberOfBuffers, WgcInterop.SizeInt32 size)
+    {
+        // IDirect3D11CaptureFramePoolStatics has 2 IInspectable methods (slots 3-5
+        // total for IUnknown+IInspectable). CreateFreeThreaded is at slot 7
+        // (after Create at 6). Verified against winrt headers.
+        var vtable = *(nint**)poolStatics;
+        var createPtr = vtable[7];
+        var fn = (delegate* unmanaged[Stdcall]<nint, nint, uint, int, WgcInterop.SizeInt32, nint*, int>)createPtr;
+        nint outPool;
+        var hr = fn(poolStatics, device, pixelFormat, numberOfBuffers, size, &outPool);
+        if (hr != 0)
+            throw new InvalidOperationException($"CreateFreeThreaded failed: hr=0x{hr:X8}");
+        return outPool;
+    }
+
+    private static unsafe nint InvokeCreateCaptureSession(nint framePool, nint item)
+    {
+        // IDirect3D11CaptureFramePool::CreateCaptureSession is at slot 10
+        // (IUnknown 0-2, IInspectable 3-5, FramePool methods 6+: Recreate,
+        // TryGetNextFrame, FrameArrivedAdd, FrameArrivedRemove, CreateCaptureSession).
+        var vtable = *(nint**)framePool;
+        var createPtr = vtable[10];
+        var fn = (delegate* unmanaged[Stdcall]<nint, nint, nint*, int>)createPtr;
+        nint outSession;
+        var hr = fn(framePool, item, &outSession);
+        if (hr != 0)
+            throw new InvalidOperationException($"CreateCaptureSession failed: hr=0x{hr:X8}");
+        return outSession;
+    }
+
+    private static unsafe nint InvokeCreateTexture2D(nint device, ref D3D11Interop.D3D11_TEXTURE2D_DESC desc)
+    {
+        // ID3D11Device::CreateTexture2D is at slot 5.
+        var vtable = *(nint**)device;
+        var createPtr = vtable[5];
+        var fn = (delegate* unmanaged[Stdcall]<nint, ref D3D11Interop.D3D11_TEXTURE2D_DESC, nint, nint*, int>)createPtr;
+        nint outTex;
+        var hr = fn(device, ref desc, nint.Zero, &outTex);
+        if (hr != 0)
+            throw new InvalidOperationException($"CreateTexture2D failed: hr=0x{hr:X8}");
+        return outTex;
+    }
+
+    private unsafe long InvokeAddFrameArrived(nint framePool)
+    {
+        // FrameArrivedAdd is at slot 8. Signature:
+        //   HRESULT add_FrameArrived(ITypedEventHandler*, EventRegistrationToken*)
+        var vtable = *(nint**)framePool;
+        var addPtr = vtable[8];
+
+        // Build a managed delegate that the runtime exposes as a function
+        // pointer matching ITypedEventHandler::Invoke. We store the delegate
+        // in a class field so it is not collected before Dispose().
+        _frameArrivedDelegate = OnFrameArrivedNative;
+        var handlerPtr = Marshal.GetFunctionPointerForDelegate(_frameArrivedDelegate);
+
+        // Wrap in a hand-rolled IUnknown shim that exposes Invoke at slot 3
+        // (the typed-event-handler signature WGC expects).
+        var shim = EventHandlerShim.Create(handlerPtr);
+        var fn = (delegate* unmanaged[Stdcall]<nint, nint, long*, int>)addPtr;
+        long token;
+        var hr = fn(framePool, shim, &token);
+        if (hr != 0)
+            throw new InvalidOperationException($"add_FrameArrived failed: hr=0x{hr:X8}");
+        // shim's refcount is 1 from Create; FrameArrivedAdd took its own ref.
+        // We release our ref so removing the handler later destroys the shim.
+        ComRelease(shim);
+        return token;
+    }
+
+    private static unsafe void InvokeStartCapture(nint session)
+    {
+        // IGraphicsCaptureSession::StartCapture is at slot 9.
+        var vtable = *(nint**)session;
+        var startPtr = vtable[9];
+        var fn = (delegate* unmanaged[Stdcall]<nint, int>)startPtr;
+        var hr = fn(session);
+        if (hr != 0)
+            throw new InvalidOperationException($"StartCapture failed: hr=0x{hr:X8}");
+    }
+
+    // Hold the delegate alive for the session lifetime.
+    private FrameArrivedNativeDelegate? _frameArrivedDelegate;
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int FrameArrivedNativeDelegate(nint sender, nint args);
+
+    private int OnFrameArrivedNative(nint sender, nint args)
+    {
+        try
+        {
+            // sender is the frame pool; call TryGetNextFrame (slot 7).
+            var frame = InvokeTryGetNextFrame(sender);
+            if (frame == nint.Zero) return 0;
+            try
+            {
+                var captured = ReadbackFrame(frame);
+                if (captured is not null)
+                    _frames.Writer.TryWrite(captured);
+            }
+            finally
+            {
+                ComRelease(frame);
+            }
+        }
+        catch
+        {
+            // Swallow: a single bad frame should not tear down the session.
+        }
+        return 0; // S_OK
+    }
+
+    private static unsafe nint InvokeTryGetNextFrame(nint framePool)
+    {
+        var vtable = *(nint**)framePool;
+        var fnPtr = vtable[7];
+        var fn = (delegate* unmanaged[Stdcall]<nint, nint*, int>)fnPtr;
+        nint outFrame;
+        var hr = fn(framePool, &outFrame);
+        return hr == 0 ? outFrame : nint.Zero;
+    }
+
+    private unsafe CapturedFrame? ReadbackFrame(nint framePtr)
+    {
+        // Direct3D11CaptureFrame: SystemRelativeTime at slot 8 (after IUnknown 0-2 + IInspectable 3-5 + Surface 6 + ContentSize 7).
+        // Returns 100-ns ticks (TimeSpan-shape).
+        var fVtable = *(nint**)framePtr;
+        var srtPtr = fVtable[8];
+        var fnSrt = (delegate* unmanaged[Stdcall]<nint, long*, int>)srtPtr;
+        long srt100ns;
+        if (fnSrt(framePtr, &srt100ns) != 0) return null;
+
+        // Surface at slot 6.
+        var surfPtr = fVtable[6];
+        var fnSurf = (delegate* unmanaged[Stdcall]<nint, nint*, int>)surfPtr;
+        nint surface;
+        if (fnSurf(framePtr, &surface) != 0) return null;
+        try
+        {
+            // Surface implements IDirect3DDxgiInterfaceAccess; QI to get ID3D11Texture2D.
+            var hrQi = ComQueryInterface(surface, WgcInterop.IID_IDirect3DDxgiInterfaceAccess, out var access);
+            if (hrQi != 0) return null;
+            try
+            {
+                // IDirect3DDxgiInterfaceAccess::GetInterface at slot 3.
+                var aVtable = *(nint**)access;
+                var giPtr = aVtable[3];
+                var giFn = (delegate* unmanaged[Stdcall]<nint, Guid*, nint*, int>)giPtr;
+                var iidTex = new Guid("6F15AAF2-D208-4E89-9AB4-489535D34F9C"); // ID3D11Texture2D
+                nint sourceTex;
+                if (giFn(access, &iidTex, &sourceTex) != 0) return null;
+                try
+                {
+                    // ID3D11DeviceContext::CopyResource at slot 47.
+                    var ctxV = *(nint**)_d3dContext;
+                    var copyPtr = ctxV[47];
+                    var copyFn = (delegate* unmanaged[Stdcall]<nint, nint, nint, void>)copyPtr;
+                    copyFn(_d3dContext, _stagingTexture, sourceTex);
+
+                    // Map at slot 14: HRESULT Map(ID3D11Resource*, UINT, D3D11_MAP, UINT, D3D11_MAPPED_SUBRESOURCE*)
+                    var mapPtr = ctxV[14];
+                    var mapFn = (delegate* unmanaged[Stdcall]<nint, nint, uint, uint, uint, D3D11Interop.D3D11_MAPPED_SUBRESOURCE*, int>)mapPtr;
+                    D3D11Interop.D3D11_MAPPED_SUBRESOURCE mapped;
+                    if (mapFn(_d3dContext, _stagingTexture, 0, D3D11Interop.D3D11_MAP_READ, 0, &mapped) != 0) return null;
+                    try
+                    {
+                        var bytes = new byte[ClientWidthPx * ClientHeightPx * 4];
+                        var rowBytes = ClientWidthPx * 4;
+                        for (var y = 0; y < ClientHeightPx; y++)
+                        {
+                            Marshal.Copy(
+                                mapped.pData + y * (int)mapped.RowPitch,
+                                bytes,
+                                y * rowBytes,
+                                rowBytes);
+                        }
+
+                        // Convert SystemRelativeTime (100-ns ticks) to QPC ticks.
+                        // TimeSpan ticks tick at 10MHz; QPC at QpcFrequency.
+                        var qpc = checked((long)(srt100ns * (decimal)QpcFrequency / 10_000_000m));
+
+                        // Unmap at slot 15.
+                        var unmapPtr = ctxV[15];
+                        var unmapFn = (delegate* unmanaged[Stdcall]<nint, nint, uint, void>)unmapPtr;
+                        unmapFn(_d3dContext, _stagingTexture, 0);
+
+                        return new CapturedFrame(bytes, ClientWidthPx, ClientHeightPx, qpc);
+                    }
+                    catch
+                    {
+                        // Best-effort unmap on error.
+                        var unmapPtr2 = ctxV[15];
+                        var unmapFn2 = (delegate* unmanaged[Stdcall]<nint, nint, uint, void>)unmapPtr2;
+                        unmapFn2(_d3dContext, _stagingTexture, 0);
+                        throw;
+                    }
+                }
+                finally { ComRelease(sourceTex); }
+            }
+            finally { ComRelease(access); }
+        }
+        finally { ComRelease(surface); }
+    }
+
     public void Dispose()
     {
+        // Stop capture first, then unhook the event, then release in reverse
+        // order of acquisition.
+        if (_captureSession != nint.Zero)
+        {
+            // IGraphicsCaptureSession is IClosable (slot 6 = Close).
+            unsafe
+            {
+                var v = *(nint**)_captureSession;
+                var closePtr = v[6];
+                var fn = (delegate* unmanaged[Stdcall]<nint, int>)closePtr;
+                _ = fn(_captureSession);
+            }
+            ComRelease(_captureSession); _captureSession = nint.Zero;
+        }
+        if (_framePool != nint.Zero)
+        {
+            // FrameArrivedRemove at slot 9.
+            if (_frameArrivedToken != 0)
+            {
+                unsafe
+                {
+                    var v = *(nint**)_framePool;
+                    var rmPtr = v[9];
+                    var fn = (delegate* unmanaged[Stdcall]<nint, long, int>)rmPtr;
+                    _ = fn(_framePool, _frameArrivedToken);
+                }
+                _frameArrivedToken = 0;
+            }
+            // FramePool is also IClosable (slot 11).
+            unsafe
+            {
+                var v = *(nint**)_framePool;
+                var closePtr = v[11];
+                var fn = (delegate* unmanaged[Stdcall]<nint, int>)closePtr;
+                _ = fn(_framePool);
+            }
+            ComRelease(_framePool); _framePool = nint.Zero;
+        }
+        if (_stagingTexture != nint.Zero) { ComRelease(_stagingTexture); _stagingTexture = nint.Zero; }
         if (_captureItem != nint.Zero) { ComRelease(_captureItem); _captureItem = nint.Zero; }
         if (_graphicsDevice != nint.Zero) { ComRelease(_graphicsDevice); _graphicsDevice = nint.Zero; }
         if (_d3dContext != nint.Zero) { ComRelease(_d3dContext); _d3dContext = nint.Zero; }
         if (_d3dDevice != nint.Zero) { ComRelease(_d3dDevice); _d3dDevice = nint.Zero; }
+        _frameArrivedDelegate = null;
+        _frames.Writer.TryComplete();
     }
 }
