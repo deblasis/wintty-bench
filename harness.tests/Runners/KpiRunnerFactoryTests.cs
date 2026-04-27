@@ -64,4 +64,22 @@ public class KpiRunnerFactoryTests
         var runner = KpiRunnerFactory.For(cell);
         Assert.IsType<MemoryRssRunner>(runner);
     }
+
+    [Fact]
+    public void For_Latency_Cell_Returns_LatencyRunner()
+    {
+        var cell = new Cell(
+            Id: "C13",
+            Shell: "pwsh-7.4",
+            Workload: "latency_keystroke_to_glyph",
+            Kpi: "latency_keystroke_to_glyph_ms",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>(),
+            MeasuredItersOverride: 30);
+        var runner = KpiRunnerFactory.For(cell);
+#pragma warning disable CA1416 // LatencyRunner is Windows-only; the harness is Windows-only.
+        Assert.IsType<LatencyRunner>(runner);
+#pragma warning restore CA1416
+    }
 }
