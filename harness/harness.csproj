@@ -17,4 +17,10 @@
   <ItemGroup>
     <InternalsVisibleTo Include="harness.tests" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\scripts\latency-echo.ps1" Link="scripts\latency-echo.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>
