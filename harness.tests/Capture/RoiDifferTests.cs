@@ -97,4 +97,54 @@ public class RoiDifferTests
         Assert.Throws<ArgumentException>(
             () => RoiDiffer.IsChanged(a, b, new Roi(0, 0, 4, 4), 8));
     }
+
+    [Fact]
+    public void DefaultMinChangedPixels1_OnePixelChanged_ReturnsTrue()
+    {
+        // Regression-guard: the default behavior (no count threshold)
+        // matches "any pixel exceeds threshold". Same as the existing
+        // SinglePixel_LumDelta31_InsideRoi_ReturnsTrue test but explicit
+        // about the default minChangedPixels parameter.
+        var a = SolidGray(8, 8, 100);
+        var b = SolidGray(8, 8, 100);
+        SetPixelGray(b, 8, x: 3, y: 3, gray: 200);
+        Assert.True(RoiDiffer.IsChanged(a, b, new Roi(0, 0, 8, 8), 8));
+    }
+
+    [Fact]
+    public void MinChangedPixels50_With30PixelsChanged_ReturnsFalse()
+    {
+        // 30 changed pixels < 50-pixel threshold -> false. Validates the
+        // count threshold the latency runner relies on to filter cursor
+        // blink and antialias jitter while still catching glyph paints.
+        var a = SolidGray(16, 16, 100);
+        var b = SolidGray(16, 16, 100);
+        for (var i = 0; i < 30; i++) SetPixelGray(b, 16, x: i % 16, y: i / 16, gray: 200);
+        Assert.False(RoiDiffer.IsChanged(
+            a, b, new Roi(0, 0, 16, 16), 16,
+            minChangedPixels: 50));
+    }
+
+    [Fact]
+    public void MinChangedPixels50_With50PixelsChanged_ReturnsTrue()
+    {
+        // 50 changed pixels >= 50-pixel threshold -> true. Boundary case.
+        var a = SolidGray(16, 16, 100);
+        var b = SolidGray(16, 16, 100);
+        for (var i = 0; i < 50; i++) SetPixelGray(b, 16, x: i % 16, y: i / 16, gray: 200);
+        Assert.True(RoiDiffer.IsChanged(
+            a, b, new Roi(0, 0, 16, 16), 16,
+            minChangedPixels: 50));
+    }
+
+    [Fact]
+    public void MinChangedPixels_NegativeOrZero_Throws()
+    {
+        var a = SolidGray(8, 8, 100);
+        var b = SolidGray(8, 8, 100);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => RoiDiffer.IsChanged(a, b, new Roi(0, 0, 8, 8), 8, minChangedPixels: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => RoiDiffer.IsChanged(a, b, new Roi(0, 0, 8, 8), 8, minChangedPixels: -1));
+    }
 }
