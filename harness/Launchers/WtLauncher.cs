@@ -17,9 +17,14 @@ public sealed class WtLauncher : ILauncher
         var configRoot = Path.Combine(Path.GetTempPath(), "wt-bench-" + Guid.NewGuid());
         WriteSettings(configRoot, request.ShellCommand, request.Cols, request.Rows);
 
+        // Use request.TargetExePath, not "wt.exe" -- the latter resolves
+        // via PATH to the Store-install wt.exe (App Execution Aliases),
+        // which would defeat the whole point of --target-wt=auto picking
+        // a portable WT. The portable path is resolved by WtAutoResolver
+        // before we get here.
         var startInfo = new ProcessStartInfo
         {
-            FileName = "wt.exe",
+            FileName = request.TargetExePath,
             Arguments = "-p WinttyBenchProfile",
             UseShellExecute = false,
         };
