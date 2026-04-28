@@ -379,14 +379,18 @@ public sealed class WgcSession : IDisposable
     // Hold the delegate alive for the session lifetime.
     private FrameArrivedNativeDelegate? _frameArrivedDelegate;
 
+    // ITypedEventHandler::Invoke is a COM method, so the runtime calls it
+    // with (this, sender, args). The implicit `this` MUST be the first
+    // delegate parameter; otherwise sender shifts left and we end up
+    // dereferencing the shim pointer as if it were the framepool.
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int FrameArrivedNativeDelegate(nint sender, nint args);
+    private delegate int FrameArrivedNativeDelegate(nint thisPtr, nint sender, nint args);
 
-    private int OnFrameArrivedNative(nint sender, nint args)
+    private int OnFrameArrivedNative(nint thisPtr, nint sender, nint args)
     {
+        // thisPtr is the EventHandlerShim instance; we ignore it.
         try
         {
-            // sender is the frame pool; call TryGetNextFrame (slot 7).
             var frame = InvokeTryGetNextFrame(sender);
             if (frame == nint.Zero) return 0;
             try
