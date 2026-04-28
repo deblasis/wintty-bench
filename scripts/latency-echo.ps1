@@ -19,6 +19,10 @@ while ($true) {
         $b = [Console]::Read()
         if ($b -lt 0) { break }
     } else {
+        # ReadKey($true) intercept: do NOT echo the typed character. We
+        # paint our own '*' below so the bench's WGC capture sees a
+        # deterministic glyph; without intercept, the host would echo the
+        # raw user keystroke as well, doubling pixel deltas in the diff.
         [void][Console]::ReadKey($true)
     }
     $col = ($i % $cols) + 1

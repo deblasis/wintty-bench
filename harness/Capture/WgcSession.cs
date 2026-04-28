@@ -77,8 +77,10 @@ public sealed class WgcSession : IDisposable
         // .NET's CLR typically pre-initializes COM on the main thread, so
         // S_FALSE is the common path under `dotnet run`.
         var hr = CombaseInterop.RoInitialize(CombaseInterop.RO_INIT_MULTITHREADED);
+        const int S_OK = 0;
+        const int S_FALSE = 1;
         const int RPC_E_CHANGED_MODE = unchecked((int)0x80010106);
-        if (hr < 0 && hr != RPC_E_CHANGED_MODE)
+        if (hr != S_OK && hr != S_FALSE && hr != RPC_E_CHANGED_MODE)
             throw new InvalidOperationException($"RoInitialize failed: hr=0x{hr:X8}");
 
         var session = new WgcSession(w, h);
