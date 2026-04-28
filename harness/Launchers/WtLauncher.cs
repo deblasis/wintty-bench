@@ -28,13 +28,68 @@ public sealed class WtLauncher : ILauncher
             startInfo.Environment[k] = v;
         }
 
+        // Snapshot which CASCADIA-owning PIDs already exist before we
+        // spawn. Reasons it must happen pre-spawn:
+        //   1. The user may already have WT open as a daily driver.
+        //      Without exclusion, Process.GetProcessesByName returns
+        //      whichever WindowsTerminal.exe matches first; that could
+        //      be the user's WT, and our JobObject.AssignProcess +
+        //      KILL_ON_JOB_CLOSE would kill it on Dispose.
+        //   2. WT 1.24 has a wt.exe -> broker -> host process chain.
+        //      The broker is transient; if we polled by name we'd
+        //      sometimes attach to a PID that exits between
+        //      Process.GetProcessesByName and Process.GetProcessById,
+        //      throwing ArgumentException("Process with an Id of N is
+        //      not running") and aborting the whole run.
+        // The fix: identify our host process by its CASCADIA window's
+        // owning PID and exclude pre-existing CASCADIA owners.
+        var existingHostPids = OperatingSystem.IsWindows()
+            ? WtHwndLocator.SnapshotCascadiaPids()
+            : new HashSet<int>();
+
         Process.Start(startInfo);
 
-        // wt.exe returns before WindowsTerminal.exe finishes starting.
-        // Poll for WindowsTerminal.exe with a generous timeout.
-        var measurable = MeasurableProcess.WaitForProcessByName("WindowsTerminal", TimeSpan.FromSeconds(10))
-            ?? throw new InvalidOperationException(
-                "WindowsTerminal.exe did not appear within 10s after wt.exe invocation");
+        // Poll for the NEW WT host: a CASCADIA window whose owning PID
+        // is not in the pre-spawn snapshot. The HWND identifies the
+        // host visually; its PID is what we attach JobObject to.
+        nint hwnd = 0;
+        int hostPid = 0;
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                var found = WtHwndLocator.WaitForNewWtHwnd(existingHostPids, TimeSpan.FromSeconds(10));
+                hwnd = found.hwnd;
+                hostPid = found.pid;
+            }
+            catch (TimeoutException ex)
+            {
+                throw new InvalidOperationException(
+                    "Windows Terminal host (CASCADIA window owner) did not appear within 10s after wt.exe invocation",
+                    ex);
+            }
+        }
+        else
+        {
+            // Non-Windows path: the harness is Windows-only so this
+            // branch is unreachable in practice. Match WinttyLauncher's
+            // shape rather than throwing here.
+            throw new PlatformNotSupportedException("WtLauncher requires Windows.");
+        }
+
+        Process winttermProc;
+        try
+        {
+            winttermProc = Process.GetProcessById(hostPid);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException(
+                string.Create(CultureInfo.InvariantCulture,
+                    $"WT host PID {hostPid} exited between HWND identification and process attach"), ex);
+        }
+
+        var measurable = MeasurableProcess.FromProcess(winttermProc, ExpectedProcessName);
 
         // Best-effort JobObject. MSIX-imposed restrictions may block
         // AssignProcessToJobObject for packaged apps in some Windows
@@ -46,36 +101,29 @@ public sealed class WtLauncher : ILauncher
             try
             {
                 var jobCandidate = new WinttyJobObject();
-                var winttermProc = Process.GetProcessById(measurable.ProcessId);
                 jobCandidate.AssignProcess(winttermProc);
                 job = jobCandidate;
             }
             catch (InvalidOperationException) { job = null; }
             catch (System.ComponentModel.Win32Exception) { job = null; }
+            catch (ArgumentException) { job = null; }
         }
 
-        // HWND lookup, then foreground verification. Both are best-effort:
-        // non-C13 cells don't need a window handle, and MSIX apps can lag
-        // on becoming foreground after Process.Start. LatencyRunner re-
-        // checks foreground per iteration, so swallowing the launch-time
-        // race here is safe.
-        nint? hwnd = null;
-        if (OperatingSystem.IsWindows())
+        // Best-effort foreground verification. MSIX apps can lag on
+        // becoming foreground after Process.Start; LatencyRunner re-
+        // checks foreground per iteration, so swallowing the launch-
+        // time race here is safe.
+        if (OperatingSystem.IsWindows() && hwnd != 0)
         {
-            try
-            {
-                hwnd = WtHwndLocator.WaitForWtHwnd(measurable.ProcessId, TimeSpan.FromSeconds(5));
-                try { WtHwndLocator.WaitForForeground(hwnd.Value, TimeSpan.FromSeconds(2)); }
-                catch (TimeoutException) { /* foreground best-effort */ }
-            }
-            catch (TimeoutException) { /* HWND best-effort */ }
+            try { WtHwndLocator.WaitForForeground(hwnd, TimeSpan.FromSeconds(2)); }
+            catch (TimeoutException) { /* foreground best-effort */ }
         }
 
         return new LaunchHandle
         {
             Process = measurable,
             ConfigRoot = configRoot,
-            WindowHandle = hwnd,
+            WindowHandle = hwnd != 0 ? hwnd : null,
             Job = job,
         };
     }

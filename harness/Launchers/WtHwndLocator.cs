@@ -48,6 +48,71 @@ public static class WtHwndLocator
             $"WT HWND with class '{ExpectedWindowClass}' for PID {pid} did not appear within {timeout.TotalSeconds:N1}s"));
     }
 
+    // Snapshot of process IDs that currently own a top-level visible
+    // window with class CASCADIA_HOSTING_WINDOW_CLASS. WtLauncher uses
+    // this to identify which WT host processes already exist BEFORE
+    // spawning wt.exe so the post-spawn poll can pick the NEW one
+    // (avoiding both user-opened WT windows and the transient
+    // wt.exe -> broker -> host handoff where the broker exits quickly).
+    public static System.Collections.Generic.HashSet<int> SnapshotCascadiaPids()
+    {
+        var pids = new System.Collections.Generic.HashSet<int>();
+        EnumWindows((hwnd, _lParam) =>
+        {
+            if (!IsWindowVisible(hwnd)) return true;
+            _ = GetWindowThreadProcessId(hwnd, out var hwndPid);
+            var buf = new char[64];
+            var len = GetClassName(hwnd, buf, buf.Length);
+            if (len == 0) return true;
+            if (new string(buf, 0, len) == ExpectedWindowClass)
+            {
+                pids.Add((int)hwndPid);
+            }
+            return true;
+        }, IntPtr.Zero);
+        return pids;
+    }
+
+    // Polls EnumWindows until a top-level window with class
+    // ExpectedWindowClass appears whose owning PID is NOT in
+    // `excludePids`, or `timeout` elapses. Returns (hwnd, pid) or
+    // throws TimeoutException. WtLauncher uses this to identify the
+    // NEW WT host process after spawning wt.exe.
+    public static (nint hwnd, int pid) WaitForNewWtHwnd(
+        System.Collections.Generic.IReadOnlySet<int> excludePids,
+        TimeSpan timeout)
+    {
+        ArgumentNullException.ThrowIfNull(excludePids);
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            nint foundHwnd = 0;
+            int foundPid = 0;
+            EnumWindows((hwnd, _lParam) =>
+            {
+                if (!IsWindowVisible(hwnd)) return true;
+                _ = GetWindowThreadProcessId(hwnd, out var hwndPid);
+                if (excludePids.Contains((int)hwndPid)) return true;
+
+                var buf = new char[64];
+                var len = GetClassName(hwnd, buf, buf.Length);
+                if (len == 0) return true;
+                if (new string(buf, 0, len) == ExpectedWindowClass)
+                {
+                    foundHwnd = hwnd;
+                    foundPid = (int)hwndPid;
+                    return false;
+                }
+                return true;
+            }, IntPtr.Zero);
+
+            if (foundHwnd != 0) return (foundHwnd, foundPid);
+            Thread.Sleep(50);
+        }
+        throw new TimeoutException(string.Create(CultureInfo.InvariantCulture,
+            $"New WT HWND with class '{ExpectedWindowClass}' did not appear within {timeout.TotalSeconds:N1}s"));
+    }
+
     // Polls until GetForegroundWindow() returns `expectedHwnd` or `timeout`
     // elapses. Throws TimeoutException on timeout. C13 needs the WT window
     // to be foreground so SendInput keystrokes hit it; MSIX apps can have
