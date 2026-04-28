@@ -10,6 +10,7 @@ public sealed record ResultEnvelope(
     [property: JsonPropertyName("release_tag")] string? ReleaseTag,
     [property: JsonPropertyName("env")] EnvCapture Env,
     [property: JsonPropertyName("fairness")] FairnessCapture Fairness,
+    [property: JsonPropertyName("terminal")] string Terminal,
     [property: JsonPropertyName("cell_id")] string CellId,
     [property: JsonPropertyName("shell")] string Shell,
     [property: JsonPropertyName("workload")] string Workload,

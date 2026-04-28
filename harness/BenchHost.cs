@@ -119,12 +119,13 @@ public static class BenchHost
                 var kpiResult = kpi.ComputeFromSamples(trimmed);
 
                 var envelope = new ResultEnvelope(
-                    SchemaVersion: 2,
+                    SchemaVersion: 3,
                     RunId: runId,
                     Mode: parsed.Mode,
                     ReleaseTag: parsed.ReleaseTag,
                     Env: env,
                     Fairness: profile.ToCapture(),
+                    Terminal: "wintty",
                     CellId: cell.Id,
                     Shell: cell.Shell,
                     Workload: cell.Workload,
