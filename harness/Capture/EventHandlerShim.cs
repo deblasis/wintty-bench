@@ -15,6 +15,16 @@ namespace WinttyBench.Capture;
 [SupportedOSPlatform("windows")]
 internal static unsafe class EventHandlerShim
 {
+    private const int E_NOINTERFACE = unchecked((int)0x80004002);
+    private static readonly Guid IID_IUnknown =
+        new("00000000-0000-0000-C000-000000000046");
+    // IAgileObject is required because the FreeThreaded frame pool will QI
+    // event handlers for it to confirm the handler is callable from any
+    // thread. The shim's QI/AddRef/Release/Invoke have no thread affinity,
+    // so claiming agility is correct.
+    private static readonly Guid IID_IAgileObject =
+        new("94EA2B94-E9CC-49E0-C0FF-EE64CA8F5B90");
+
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int QueryInterfaceFn(nint self, Guid* iid, nint* ppv);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
@@ -59,12 +69,35 @@ internal static unsafe class EventHandlerShim
 
     private static int QI(nint self, Guid* iid, nint* ppv)
     {
-        // Accept any IID: WGC only QIs IUnknown and the typed-event-handler
-        // IID, both of which we satisfy by returning self.
+        // We strictly implement IUnknown (slots 0-2) plus a single Invoke
+        // method at slot 3 that matches ITypedEventHandler<,>::Invoke. We
+        // are also agile (no thread affinity, no STA marshaling).
+        //
+        // Returning E_NOINTERFACE for IIDs we don't support is the COM
+        // contract. The runtime caveat: WGC's FrameArrivedAdd internally
+        // QIs handlers for the parameterized typed-event-handler IID
+        // (a hash of TypedEventHandler<,>'s base IID with Direct3D11-
+        // CaptureFramePool and IInspectable). We can't enumerate that
+        // IID at compile time, so we accept any IID that isn't on a
+        // known-bad list. Today the only known-bad list is empty; if
+        // future smoke runs surface an IID we should reject (e.g. a
+        // debugger probing IDispatch and then dispatching through our
+        // 4-slot vtable), add it here. The IUnknown / IAgileObject
+        // checks below short-circuit the common probe path; everything
+        // else falls through to the same accept behavior with the same
+        // refcount bump.
+        var i = *iid;
         var p = (Instance*)self;
+        if (i == IID_IUnknown || i == IID_IAgileObject)
+        {
+            Interlocked.Increment(ref p->RefCount);
+            *ppv = self;
+            return 0; // S_OK
+        }
+        // Default-accept: see contract caveat above.
         Interlocked.Increment(ref p->RefCount);
         *ppv = self;
-        return 0; // S_OK
+        return 0;
     }
 
     private static uint AddRef(nint self)
