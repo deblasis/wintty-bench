@@ -118,7 +118,7 @@ public class StartupRunnerTests
         var resolver = new FixtureResolver(new WslFixtureCache());
         var runner = new StartupRunner();
 
-        var samples = await runner.RunAsync(cell, exe, profile, resolver);
+        var samples = await runner.RunAsync(cell, "wintty", exe, profile, resolver);
 
         Assert.Single(samples);
         Assert.False(samples[0].Hung);

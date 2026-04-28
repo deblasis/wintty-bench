@@ -109,7 +109,7 @@ public static class BenchHost
                     $"[{cellId}] {cell.Shell} x {cell.Workload} ({cell.Kpi})"));
 
                 var runner = KpiRunnerFactory.For(cell);
-                var samples = runner.RunAsync(cell, parsed.TargetExePath, profile, resolver).GetAwaiter().GetResult();
+                var samples = runner.RunAsync(cell, "wintty", parsed.TargetExePath, profile, resolver).GetAwaiter().GetResult();
 
                 var trimmed = profile.Discarded.Contains("last")
                     ? KpiStats.TrimFirstAndLast(samples)

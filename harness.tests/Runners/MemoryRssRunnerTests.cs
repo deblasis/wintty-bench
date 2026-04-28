@@ -30,7 +30,7 @@ public class MemoryRssRunnerTests
         var resolver = new FixtureResolver(new WslFixtureCache());
         var runner = new MemoryRssRunner();
 
-        var samples = await runner.RunAsync(cell, exe, profile, resolver);
+        var samples = await runner.RunAsync(cell, "wintty", exe, profile, resolver);
 
         Assert.Single(samples);
         Assert.False(samples[0].Hung);

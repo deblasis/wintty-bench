@@ -21,18 +21,22 @@ namespace WinttyBench.Runners;
 // the CI cell budget (15 min under FairnessProfile.Ci()).
 public sealed class StartupRunner : IKpiRunner
 {
+    public IReadOnlyList<string> SupportedTerminals { get; } = ["wintty"];
+
     public Task<IReadOnlyList<IterationSample>> RunAsync(
         Cell cell,
-        string winttyExe,
+        string terminalName,
+        string targetExePath,
         FairnessProfile profile,
         FixtureResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(cell);
-        ArgumentException.ThrowIfNullOrEmpty(winttyExe);
+        ArgumentException.ThrowIfNullOrEmpty(terminalName);
+        ArgumentException.ThrowIfNullOrEmpty(targetExePath);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(resolver);
 
-        var launcher = new WinttyLauncher();
+        var launcher = LauncherFactory.For(terminalName);
         var totalIters = profile.WarmupIters + profile.MeasuredIters;
         var samples = new List<IterationSample>(profile.MeasuredIters);
 
@@ -46,7 +50,7 @@ public sealed class StartupRunner : IKpiRunner
             var shellCmd = BuildPwshStartupCommand(sentinelPath);
 
             var launch = launcher.Launch(new LaunchRequest(
-                TargetExePath: winttyExe,
+                TargetExePath: targetExePath,
                 ShellCommand: shellCmd,
                 ConfigOverrides: cell.WinttyConfigOverrides,
                 Cols: 120,
