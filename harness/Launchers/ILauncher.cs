@@ -28,6 +28,13 @@ public sealed class LaunchHandle : IDisposable
     // cannot use a job (e.g. WtLauncher hands off to an MSIX app).
     public IDisposable? Job { get; init; }
 
+    // Top-level window handle of the launched terminal, populated by the
+    // launcher once the window has been identified. LatencyRunner uses
+    // this for SendInput targeting + WGC capture instead of re-discovering
+    // the HWND from process ID. Null if the launcher did not (or could not)
+    // identify a window. Wintty + WT fill it; future launchers should too.
+    public nint? WindowHandle { get; init; }
+
     public void Dispose()
     {
         // Dispose the job first: closing the handle with KILL_ON_JOB_CLOSE

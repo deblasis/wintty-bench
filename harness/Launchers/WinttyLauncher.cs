@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using WinttyBench.Input;
 
 namespace WinttyBench.Launchers;
 
@@ -70,12 +71,36 @@ public sealed class WinttyLauncher : ILauncher
             }
         }
 
+        // Discover the top-level HWND so LatencyRunner can target SendInput
+        // and open a WGC capture session without having to re-walk the
+        // process tree itself. Non-C13 cells (Startup, MemoryRss) don't
+        // need a window handle and finish before the timeout matters; if
+        // the lookup times out we leave WindowHandle null and let
+        // LatencyRunner throw separately when (and only if) it tries to
+        // use it. CA1416 does not flow the outer OS check into the inner
+        // call site, so the IsWindows() guard is required around the
+        // HwndLocator call even though the surrounding launcher is
+        // Windows-only in practice.
+        nint? hwnd = null;
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                hwnd = HwndLocator.WaitForWinttyHwnd(proc.Id, TimeSpan.FromSeconds(5));
+            }
+            catch (TimeoutException)
+            {
+                // Swallowed: see comment above. Only LatencyRunner cares.
+            }
+        }
+
         // Wintty is self-hosted: the spawned exe IS the measurable process.
         return new LaunchHandle
         {
             Process = MeasurableProcess.FromProcess(proc, ExpectedProcessName),
             ConfigRoot = configRoot,
             Job = job,
+            WindowHandle = hwnd,
         };
     }
 
