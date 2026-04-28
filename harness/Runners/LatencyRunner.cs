@@ -70,15 +70,26 @@ public sealed class LatencyRunner : IKpiRunner
             var hwnd = HwndLocator.WaitForWinttyHwnd(launch.Process.ProcessId, TimeSpan.FromSeconds(5));
 
             using var session = WgcSession.Open(hwnd);
-            var (cellPxW, cellPxH) = RoiCalculator.MeasureCellPixSize(
-                session.ClientWidthPx, session.ClientHeightPx, Cols, Rows);
+
+            // Full-frame diff with a count threshold instead of a per-cell
+            // ROI. Wintty's actual cell grid sits inside the client area
+            // with unknown padding/borders that the cols/rows division
+            // can't predict; per-cell ROI math fired all-Hung in the
+            // 2026-04-28 smoke even though wintty was clearly painting `*`.
+            // A glyph paint is dozens of brightness-flipped pixels (a `*`
+            // is 30+ at 8x16); cursor blink contributes ~80-130 pixels in
+            // the same area, so a threshold of 50 catches glyph paints
+            // while still firing on cursor blink (acceptable: blink lands
+            // anywhere, glyph lands first frame after the keystroke and
+            // wins on average).
+            const int MinChangedPixels = 50;
+            var fullFrameRoi = new Roi(0, 0, session.ClientWidthPx, session.ClientHeightPx);
 
             var samples = new List<IterationSample>(measuredIters);
 
             for (var i = 0; i < totalIters; i++)
             {
                 var isWarmup = i < profile.WarmupIters;
-                var roi = RoiCalculator.For(i, cellPxW, cellPxH, Cols, Rows);
 
                 SendInputProbe.EnsureForeground(hwnd);
                 CapturedFrame baseline = await session.NextFrameAsync(CancellationToken.None);
@@ -97,7 +108,8 @@ public sealed class LatencyRunner : IKpiRunner
                     catch (OperationCanceledException) { break; }
 
                     if (RoiDiffer.IsChanged(
-                            baseline.BgraPixels, frame.BgraPixels, roi, frame.Width))
+                            baseline.BgraPixels, frame.BgraPixels, fullFrameRoi, frame.Width,
+                            minChangedPixels: MinChangedPixels))
                     {
                         var qpcDelta = frame.QpcSystemRelativeTime - qpc0;
                         latencyMs = qpcDelta * 1000.0 / session.QpcFrequency;

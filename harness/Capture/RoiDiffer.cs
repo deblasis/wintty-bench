@@ -11,21 +11,25 @@ namespace WinttyBench.Capture;
 public static class RoiDiffer
 {
     private const byte DefaultLuminanceThreshold = 30;
+    private const int DefaultMinChangedPixels = 1;
 
     public static bool IsChanged(
         ReadOnlySpan<byte> baselineBgra,
         ReadOnlySpan<byte> currentBgra,
         Roi roi,
         int frameWidthPx,
-        byte luminanceThreshold = DefaultLuminanceThreshold)
+        byte luminanceThreshold = DefaultLuminanceThreshold,
+        int minChangedPixels = DefaultMinChangedPixels)
     {
         if (roi.W <= 0 || roi.H <= 0)
             throw new ArgumentException("ROI must have positive width and height", nameof(roi));
         if (baselineBgra.Length != currentBgra.Length)
             throw new ArgumentException("Baseline and current buffers must have equal length");
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(frameWidthPx);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(minChangedPixels);
 
         var rowStrideBytes = frameWidthPx * 4;
+        var changed = 0;
 
         for (var dy = 0; dy < roi.H; dy++)
         {
@@ -36,7 +40,7 @@ public static class RoiDiffer
                 var lumA = Luminance(baselineBgra[p + 2], baselineBgra[p + 1], baselineBgra[p]);
                 var lumB = Luminance(currentBgra[p + 2], currentBgra[p + 1], currentBgra[p]);
                 var delta = lumA > lumB ? lumA - lumB : lumB - lumA;
-                if (delta > luminanceThreshold)
+                if (delta > luminanceThreshold && ++changed >= minChangedPixels)
                     return true;
             }
         }
