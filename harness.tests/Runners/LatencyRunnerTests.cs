@@ -35,7 +35,7 @@ public class LatencyRunnerTests
         var profile = FairnessProfile.Ci();
         var resolver = new FixtureResolver(new WslFixtureCache());
 
-        var samples = await new LatencyRunner().RunAsync(cell, WinttyExe!, profile, resolver);
+        var samples = await new LatencyRunner().RunAsync(cell, "wintty", WinttyExe!, profile, resolver);
         Assert.NotEmpty(samples);
         var nonHung = samples.Where(s => !s.Hung).ToArray();
         Assert.NotEmpty(nonHung);

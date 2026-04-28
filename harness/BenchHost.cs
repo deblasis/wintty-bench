@@ -9,18 +9,28 @@ namespace WinttyBench;
 public sealed record ParsedArgs(
     string Mode,
     IReadOnlyList<string> Cells,
-    string TargetExePath,
+    string? TargetExePath,
+    string? TargetWtPath,
+    IReadOnlyList<string> Terminals,
+    string? RequireVersion,
     string? ReleaseTag);
 
 public static class BenchHost
 {
-    private static readonly HashSet<string> ValidModes = ["ci", "marketing"];
+    private static readonly HashSet<string> ValidModes =
+        new(["ci", "marketing"], StringComparer.Ordinal);
+
+    private static readonly HashSet<string> KnownTerminals =
+        new(["wintty", "wt"], StringComparer.Ordinal);
 
     public static ParsedArgs ParseArgs(IReadOnlyList<string> args)
     {
         string? mode = null;
         string? cells = null;
         string? target = null;
+        string? targetWt = null;
+        string? terminalsSpec = null;
+        string? requireVersion = null;
         string? releaseTag = null;
 
         foreach (var arg in args)
@@ -36,6 +46,9 @@ public static class BenchHost
                 case "mode": mode = value; break;
                 case "cells": cells = value; break;
                 case "target": target = value; break;
+                case "target-wt": targetWt = value; break;
+                case "terminals": terminalsSpec = value; break;
+                case "require-version": requireVersion = value; break;
                 case "release-tag": releaseTag = value; break;
                 default: throw new ArgumentException($"Unknown flag --{key}");
             }
@@ -45,13 +58,19 @@ public static class BenchHost
         if (!ValidModes.Contains(mode))
             throw new ArgumentException($"Unknown mode '{mode}'. Valid: {string.Join(", ", ValidModes)}");
         if (cells is null) throw new ArgumentException("--cells is required");
-        if (target is null) throw new ArgumentException("--target is required");
         if (mode == "marketing" && releaseTag is null)
             throw new ArgumentException("--release-tag is required in marketing mode");
 
+        var terminals = ResolveTerminals(terminalsSpec);
+
+        if (terminals.Contains("wintty") && target is null)
+            throw new ArgumentException("--target=<Wintty.exe path> is required when 'wintty' is in --terminals");
+        if (terminals.Contains("wt") && targetWt is null)
+            throw new ArgumentException("--target-wt=auto|<wt.exe path> is required when 'wt' is in --terminals");
+
         var cellList = ResolveCells(cells);
 
-        return new ParsedArgs(mode, cellList, target, releaseTag);
+        return new ParsedArgs(mode, cellList, target, targetWt, terminals, requireVersion, releaseTag);
     }
 
     private static string SanitizeForPath(string s)
@@ -81,13 +100,39 @@ public static class BenchHost
         return ids;
     }
 
+    private static string[] ResolveTerminals(string? spec)
+    {
+        if (string.IsNullOrWhiteSpace(spec)) return ["wintty"];
+        var parts = spec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var p in parts)
+        {
+            if (!KnownTerminals.Contains(p))
+                throw new ArgumentException($"Unknown terminal '{p}'. Known: {string.Join(", ", KnownTerminals)}");
+        }
+        return parts;
+    }
+
+    private static string ResolveTargetExePath(string terminalName, ParsedArgs parsed) => terminalName switch
+    {
+        "wintty" => parsed.TargetExePath
+            ?? throw new InvalidOperationException("Wintty target should have been validated at ParseArgs"),
+        "wt" => Launchers.WtAutoResolver.Resolve(parsed.TargetWtPath
+            ?? throw new InvalidOperationException("WT target should have been validated at ParseArgs")),
+        _ => throw new ArgumentException($"Unknown terminal '{terminalName}'"),
+    };
+
     public static int Run(IReadOnlyList<string> args)
     {
         try
         {
             var parsed = ParseArgs(args);
             var profile = parsed.Mode == "ci" ? FairnessProfile.Ci() : FairnessProfile.Marketing();
-            var env = EnvProbe.Capture(parsed.TargetExePath);
+
+            // Capture env once per run; both terminals share environmental
+            // facts (CPU/RAM/Windows build/display). When wintty is not in
+            // play, ProbeWinttyVersion silently degrades to "unknown".
+            var winttyTargetForEnv = parsed.TargetExePath ?? string.Empty;
+            var env = EnvProbe.Capture(winttyTargetForEnv);
             var shortSha = env.WinttySha.Length >= 7 ? env.WinttySha[..7] : env.WinttySha;
             // Run ID is embedded in both filesystem paths and JSON; keep it
             // filesystem-safe on Windows (no ':' from ISO timestamps, no '+'
@@ -100,52 +145,93 @@ public static class BenchHost
                 : Path.Combine("results", string.Create(CultureInfo.InvariantCulture, $"{DateTime.UtcNow:yyyy-MM-dd}-{SanitizeForPath(parsed.ReleaseTag!)}"));
             Directory.CreateDirectory(outDir);
 
+            // Resolve target paths once before iteration so any portable-cache or
+            // PATH-resolution failure surfaces at startup, not 8 minutes into a run.
+            var targetExeByTerminal = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var terminalName in parsed.Terminals)
+            {
+                targetExeByTerminal[terminalName] = ResolveTargetExePath(terminalName, parsed);
+            }
+
             var resolver = new FixtureResolver(new WslFixtureCache());
+
+            // VersionGate runs once before any iterations; gate failures
+            // throw early so we never spawn launchers under a bad pin.
+            if (!string.IsNullOrEmpty(parsed.RequireVersion))
+            {
+                var pins = VersionGate.Parse(parsed.RequireVersion);
+                // TODO(plan3a-followup): env.WtVersion comes from EnvProbe.ProbeWtVersion,
+                // which queries the AppX package -- i.e. the user's Store WT, not the
+                // resolved (potentially portable) wt.exe at parsed.TargetWtPath. This means
+                // --require-version=wt:<v> compares against the Store install, not the
+                // launched binary. Replace with FileVersionInfo.GetVersionInfo on the
+                // resolved path once the WT measurement work resumes.
+                var detected = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["wt"] = env.WtVersion,
+                };
+                VersionGate.Verify(pins, detected);
+            }
 
             foreach (var cellId in parsed.Cells)
             {
                 var cell = StarredCells.All.Single(c => c.Id == cellId);
-                Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                    $"[{cellId}] {cell.Shell} x {cell.Workload} ({cell.Kpi})"));
-
                 var runner = KpiRunnerFactory.For(cell);
-                var samples = runner.RunAsync(cell, parsed.TargetExePath, profile, resolver).GetAwaiter().GetResult();
 
-                var trimmed = profile.Discarded.Contains("last")
-                    ? KpiStats.TrimFirstAndLast(samples)
-                    : samples.Skip(profile.Discarded.Count).ToArray();
+                foreach (var terminalName in parsed.Terminals)
+                {
+                    if (!runner.SupportedTerminals.Contains(terminalName))
+                    {
+                        Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                            $"[{cellId}/{terminalName}] skipped (runner does not support terminal)"));
+                        continue;
+                    }
 
-                var kpi = KpiFactory.For(cell.Kpi);
-                var kpiResult = kpi.ComputeFromSamples(trimmed);
+                    Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                        $"[{cellId}/{terminalName}] {cell.Shell} x {cell.Workload} ({cell.Kpi})"));
 
-                var envelope = new ResultEnvelope(
-                    SchemaVersion: 2,
-                    RunId: runId,
-                    Mode: parsed.Mode,
-                    ReleaseTag: parsed.ReleaseTag,
-                    Env: env,
-                    Fairness: profile.ToCapture(),
-                    CellId: cell.Id,
-                    Shell: cell.Shell,
-                    Workload: cell.Workload,
-                    Kpi: cell.Kpi,
-                    ValueP50: kpiResult.ValueP50,
-                    ValueP95: kpiResult.ValueP95,
-                    ValueP99: kpiResult.ValueP99,
-                    ValueStddev: kpiResult.ValueStddev,
-                    RawIterations: kpiResult.RawIterations,
-                    Source: kpiResult.Source,
-                    Notes: "");
+                    var targetForTerminal = targetExeByTerminal[terminalName];
 
-                var outPath = Path.Combine(outDir, string.Create(CultureInfo.InvariantCulture, $"{cell.Id}.json"));
-                File.WriteAllText(outPath,
-                    System.Text.Json.JsonSerializer.Serialize(envelope,
-                        ResultSchemaContext.Default.ResultEnvelope));
-                var p50Display = kpiResult.ValueP50.HasValue
-                    ? string.Create(CultureInfo.InvariantCulture, $"{kpiResult.ValueP50.Value:N0} {kpi.UnitHint}")
-                    : "degraded";
-                Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
-                    $"[{cellId}] wrote {outPath} (p50 = {p50Display})"));
+                    var samples = runner.RunAsync(cell, terminalName, targetForTerminal, profile, resolver).GetAwaiter().GetResult();
+
+                    var trimmed = profile.Discarded.Contains("last")
+                        ? KpiStats.TrimFirstAndLast(samples)
+                        : samples.Skip(profile.Discarded.Count).ToArray();
+
+                    var kpi = KpiFactory.For(cell.Kpi);
+                    var kpiResult = kpi.ComputeFromSamples(trimmed);
+
+                    var envelope = new ResultEnvelope(
+                        SchemaVersion: 3,
+                        RunId: runId,
+                        Mode: parsed.Mode,
+                        ReleaseTag: parsed.ReleaseTag,
+                        Env: env,
+                        Fairness: profile.ToCapture(),
+                        Terminal: terminalName,
+                        CellId: cell.Id,
+                        Shell: cell.Shell,
+                        Workload: cell.Workload,
+                        Kpi: cell.Kpi,
+                        ValueP50: kpiResult.ValueP50,
+                        ValueP95: kpiResult.ValueP95,
+                        ValueP99: kpiResult.ValueP99,
+                        ValueStddev: kpiResult.ValueStddev,
+                        RawIterations: kpiResult.RawIterations,
+                        Source: kpiResult.Source,
+                        Notes: "");
+
+                    var outPath = Path.Combine(outDir, string.Create(CultureInfo.InvariantCulture,
+                        $"{cell.Id}-{terminalName}.json"));
+                    File.WriteAllText(outPath,
+                        System.Text.Json.JsonSerializer.Serialize(envelope,
+                            ResultSchemaContext.Default.ResultEnvelope));
+                    var p50Display = kpiResult.ValueP50.HasValue
+                        ? string.Create(CultureInfo.InvariantCulture, $"{kpiResult.ValueP50.Value:N0} {kpi.UnitHint}")
+                        : "degraded";
+                    Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
+                        $"[{cellId}/{terminalName}] wrote {outPath} (p50 = {p50Display})"));
+                }
             }
 
             return 0;
@@ -154,6 +240,11 @@ public static class BenchHost
         {
             Console.Error.WriteLine($"Arg error: {ex.Message}");
             return 2;
+        }
+        catch (VersionMismatchException ex)
+        {
+            Console.Error.WriteLine($"Version gate: {ex.Message}");
+            return 3;
         }
     }
 }

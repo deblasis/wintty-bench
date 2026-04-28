@@ -33,6 +33,7 @@ public class ResultSchemaTests
                 WarmupIters: 1,
                 MeasuredIters: 10,
                 Discarded: ["first"]),
+            Terminal: "wintty",
             CellId: "C1",
             Shell: "pwsh-7.4",
             Workload: "vtebench_dense_cells",
@@ -59,6 +60,7 @@ public class ResultSchemaTests
             1, "run1", "ci", null,
             new EnvCapture("sha", "ver", "wt", null, "win", "cpu", "gpu", 32, new DisplayCapture(1920, 1080, 60, 1.0)),
             new FairnessCapture("default", false, "Normal", false, 1, 10, []),
+            "wintty",
             "C1", "pwsh-7.4", "vtebench_dense_cells", "throughput_bytes_per_sec",
             100, 95, 90, 5,
             new[] { new IterationSample(100.0, false), new IterationSample(100.0, false), new IterationSample(100.0, false) },
@@ -83,6 +85,7 @@ public class ResultSchemaTests
             Env: new EnvCapture("sha", "v", "wt", null, "b", "cpu", "gpu", 16,
                 new DisplayCapture(1920, 1080, 60, 1.0)),
             Fairness: new FairnessCapture("default", false, "Normal", false, 1, 10, ["first"]),
+            Terminal: "wintty",
             CellId: "C10",
             Shell: "wsl-ubuntu-24.04",
             Workload: "vtebench_cat_sustained",
@@ -99,5 +102,41 @@ public class ResultSchemaTests
         Assert.Contains("\"schema_version\": 2", json, StringComparison.Ordinal);
         Assert.Contains("\"hung\": true", json, StringComparison.Ordinal);
         Assert.Contains("\"value\": null", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Envelope_RoundTrip_v3_PreservesTerminal()
+    {
+        var env = new EnvCapture("sha", "1.0.0", "1.18.3231.0", null, "10.0", "cpu", "gpu", 16,
+            new DisplayCapture(1920, 1080, 60, 1.0));
+        var fairness = new FairnessCapture("default", false, "Normal", false, 1, 10, ["first"]);
+        var envelope = new ResultEnvelope(
+            SchemaVersion: 3,
+            RunId: "rid",
+            Mode: "ci",
+            ReleaseTag: null,
+            Env: env,
+            Fairness: fairness,
+            Terminal: "wt",
+            CellId: "C1",
+            Shell: "pwsh-7.4",
+            Workload: "vtebench_dense_cells",
+            Kpi: "throughput_bytes_per_sec",
+            ValueP50: 234567.0,
+            ValueP95: null,
+            ValueP99: null,
+            ValueStddev: null,
+            RawIterations: new List<IterationSample>(),
+            Source: "hyperfine",
+            Notes: "");
+
+        var json = JsonSerializer.Serialize(envelope, ResultSchemaContext.Default.ResultEnvelope);
+        var deserialized = JsonSerializer.Deserialize(json, ResultSchemaContext.Default.ResultEnvelope);
+
+        Assert.NotNull(deserialized);
+        Assert.Equal(3, deserialized!.SchemaVersion);
+        Assert.Equal("wt", deserialized.Terminal);
+        Assert.Contains("\"terminal\": \"wt\"", json);
+        Assert.Contains("\"schema_version\": 3", json);
     }
 }

@@ -31,20 +31,24 @@ public sealed class MemoryRssRunner : IKpiRunner
     private static readonly TimeSpan SamplingCadence = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan MinAliveBeforeSampling = TimeSpan.FromSeconds(1);
 
+    public IReadOnlyList<string> SupportedTerminals { get; } = ["wintty"];
+
     public async Task<IReadOnlyList<IterationSample>> RunAsync(
         Cell cell,
-        string winttyExe,
+        string terminalName,
+        string targetExePath,
         FairnessProfile profile,
         FixtureResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(cell);
-        ArgumentException.ThrowIfNullOrEmpty(winttyExe);
+        ArgumentException.ThrowIfNullOrEmpty(terminalName);
+        ArgumentException.ThrowIfNullOrEmpty(targetExePath);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(resolver);
 
         var handle = await resolver.ResolveAsync(cell, profile);
 
-        var launcher = new WinttyLauncher();
+        var launcher = LauncherFactory.For(terminalName);
         var totalIters = profile.WarmupIters + profile.MeasuredIters;
         var samples = new List<IterationSample>(profile.MeasuredIters);
 
@@ -54,7 +58,7 @@ public sealed class MemoryRssRunner : IKpiRunner
 
             var shellCmd = BuildWslCatCommand(handle.ShellPath);
             var launch = launcher.Launch(new LaunchRequest(
-                TargetExePath: winttyExe,
+                TargetExePath: targetExePath,
                 ShellCommand: shellCmd,
                 ConfigOverrides: cell.WinttyConfigOverrides,
                 Cols: 120,

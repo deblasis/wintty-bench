@@ -26,14 +26,18 @@ public sealed class LatencyRunner : IKpiRunner
     private const int Cols = 120;
     private const int Rows = 32;
 
+    public IReadOnlyList<string> SupportedTerminals { get; } = ["wintty", "wt"];
+
     public async Task<IReadOnlyList<IterationSample>> RunAsync(
         Cell cell,
-        string winttyExe,
+        string terminalName,
+        string targetExePath,
         FairnessProfile profile,
         FixtureResolver resolver)
     {
         ArgumentNullException.ThrowIfNull(cell);
-        ArgumentException.ThrowIfNullOrEmpty(winttyExe);
+        ArgumentException.ThrowIfNullOrEmpty(terminalName);
+        ArgumentException.ThrowIfNullOrEmpty(targetExePath);
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(resolver);
 
@@ -55,12 +59,12 @@ public sealed class LatencyRunner : IKpiRunner
         // file remains the single source of truth and stays test-driven.
         var scriptText = File.ReadAllText(scriptPath);
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(scriptText));
-        var launcher = new WinttyLauncher();
+        var launcher = LauncherFactory.For(terminalName);
         var shellCmd = string.Create(CultureInfo.InvariantCulture,
             $"pwsh -NoLogo -NoProfile -EncodedCommand {encoded}");
 
         var launch = launcher.Launch(new LaunchRequest(
-            TargetExePath: winttyExe,
+            TargetExePath: targetExePath,
             ShellCommand: shellCmd,
             ConfigOverrides: cell.WinttyConfigOverrides,
             Cols: Cols,
@@ -68,7 +72,10 @@ public sealed class LatencyRunner : IKpiRunner
 
         try
         {
-            var hwnd = HwndLocator.WaitForWinttyHwnd(launch.Process.ProcessId, TimeSpan.FromSeconds(5));
+            var hwnd = launch.WindowHandle
+                ?? throw new InvalidOperationException(
+                    string.Create(CultureInfo.InvariantCulture,
+                        $"Launcher for '{terminalName}' did not populate WindowHandle; LatencyRunner requires it for SendInput targeting."));
 
             using var session = WgcSession.Open(hwnd);
 

@@ -63,7 +63,7 @@ public class LauncherTests
         var tempRoot = Path.Combine(Path.GetTempPath(), "wt-bench-test-" + Guid.NewGuid());
         try
         {
-            WtLauncher.WriteSettings(tempRoot, shellCommand: "pwsh -NoLogo");
+            WtLauncher.WriteSettings(tempRoot, shellCommand: "pwsh -NoLogo", cols: 80, rows: 24);
             var settingsPath = Path.Combine(tempRoot, "settings.json");
             Assert.True(File.Exists(settingsPath));
             var content = File.ReadAllText(settingsPath);
