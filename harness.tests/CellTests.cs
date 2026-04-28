@@ -234,4 +234,89 @@ public class CellTests
         Assert.Null(c9.FixturePath);
         Assert.Equal("c11", c9.FixtureKey);
     }
+
+    [Fact]
+    public void Cell_With_MeasuredItersOverride_RoundTrips()
+    {
+        var cell = new Cell(
+            Id: "C13",
+            Shell: "pwsh-7.4",
+            Workload: "latency_keystroke_to_glyph",
+            Kpi: "latency_keystroke_to_glyph_ms",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>(),
+            MeasuredItersOverride: 30);
+        Assert.Equal(30, cell.MeasuredItersOverride);
+    }
+
+    [Fact]
+    public void Cell_With_Null_MeasuredItersOverride_RoundTrips()
+    {
+        var cell = new Cell(
+            Id: "C1",
+            Shell: "pwsh-7.4",
+            Workload: "vtebench_dense_cells",
+            Kpi: "throughput_bytes_per_sec",
+            FixturePath: "fixtures/vtebench/dense_cells.txt",
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>());
+        Assert.Null(cell.MeasuredItersOverride);
+    }
+
+    [Fact]
+    public void Cell_With_Zero_MeasuredItersOverride_Throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Cell(
+            Id: "C13",
+            Shell: "pwsh-7.4",
+            Workload: "latency_keystroke_to_glyph",
+            Kpi: "latency_keystroke_to_glyph_ms",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>(),
+            MeasuredItersOverride: 0));
+    }
+
+    [Fact]
+    public void Cell_With_Negative_MeasuredItersOverride_Throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Cell(
+            Id: "C13",
+            Shell: "pwsh-7.4",
+            Workload: "latency_keystroke_to_glyph",
+            Kpi: "latency_keystroke_to_glyph_ms",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>(),
+            MeasuredItersOverride: -1));
+    }
+
+    [Fact]
+    public void Cell_LatencyKpi_Is_FixtureLess()
+    {
+        // null FixturePath + null FixtureKey is OK because latency is fixture-less.
+        var cell = new Cell(
+            Id: "C13",
+            Shell: "pwsh-7.4",
+            Workload: "latency_keystroke_to_glyph",
+            Kpi: "latency_keystroke_to_glyph_ms",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>());
+        Assert.Equal("latency_keystroke_to_glyph_ms", cell.Kpi);
+    }
+
+    [Fact]
+    public void Cell_LatencyKpi_With_FixturePath_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => new Cell(
+            Id: "C13",
+            Shell: "pwsh-7.4",
+            Workload: "latency_keystroke_to_glyph",
+            Kpi: "latency_keystroke_to_glyph_ms",
+            FixturePath: "fixtures/whatever.txt",
+            FixtureKey: null,
+            WinttyConfigOverrides: new Dictionary<string, string>()));
+    }
 }

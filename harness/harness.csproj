@@ -8,9 +8,19 @@
          PublishAot stays false; we only go AOT for the startup bench target. -->
     <IsAotCompatible>true</IsAotCompatible>
     <PublishAot>false</PublishAot>
+
+    <!-- Required by WgcSession.ComQueryInterface / ComRelease, which dispatch
+         COM vtable slots via delegate* unmanaged[Stdcall] function pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="harness.tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\scripts\latency-echo.ps1" Link="scripts\latency-echo.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

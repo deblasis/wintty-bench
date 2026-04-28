@@ -117,5 +117,20 @@ public static class StarredCells
             FixturePath: null,
             FixtureKey: "c11",
             WinttyConfigOverrides: Empty),
+
+        // C13: keystroke-to-glyph latency. SendInput synthesizes one VK_SPACE
+        // per iter; WGC captures the next frame whose per-iter ROI shows a
+        // paint; latency = (frame_qpc - send_qpc) ms. 30 measured iters
+        // converges p50 to ~1ms with frame-timestamp precision; 9 iters
+        // (default Ci profile) leaves +/- 8ms quantization noise at 60Hz.
+        new Cell(
+            Id: "C13",
+            Shell: "pwsh-7.4",
+            Workload: "latency_keystroke_to_glyph",
+            Kpi: "latency_keystroke_to_glyph_ms",
+            FixturePath: null,
+            FixtureKey: null,
+            WinttyConfigOverrides: Empty,
+            MeasuredItersOverride: 30),
     ];
 }

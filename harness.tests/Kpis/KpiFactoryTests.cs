@@ -31,4 +31,11 @@ public class KpiFactoryTests
         var kpi = KpiFactory.For("rss_peak_bytes");
         Assert.IsType<MemoryRssKpi>(kpi);
     }
+
+    [Fact]
+    public void For_Latency_Returns_LatencyKpi()
+    {
+        var kpi = KpiFactory.For("latency_keystroke_to_glyph_ms");
+        Assert.IsType<LatencyKpi>(kpi);
+    }
 }

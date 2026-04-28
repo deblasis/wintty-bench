@@ -6,7 +6,7 @@ Measures throughput, startup, memory, VT correctness, resize reflow, and keystro
 
 ## Status
 
-MVP shipped. Plan 2A extends to 7 throughput cells (C1-C5, C10, C11) with mode-aware generated fixtures on the WSL side and schema v2 (`IterationSample` per iteration, `hung` flag, nullable p50 for degraded cells). Plan 2B adds the first non-throughput KPI (`startup_seconds`, cell C8) on top of a refactored `IKpi` / `IKpiRunner` shape that makes further KPIs drop-in. Remaining KPIs (memory, latency) and WT/WezTerm comparison come in later plans.
+MVP shipped. Plan 2A extends to 7 throughput cells (C1-C5, C10, C11) with mode-aware generated fixtures on the WSL side and schema v2 (`IterationSample` per iteration, `hung` flag, nullable p50 for degraded cells). Plan 2B adds the first non-throughput KPI (`startup_seconds`, cell C8) on top of a refactored `IKpi` / `IKpiRunner` shape that makes further KPIs drop-in. Plan 2D adds keystroke-to-glyph latency (cell C13) via Windows.Graphics.Capture + SendInput. WT/WezTerm comparison comes in Plan 3.
 
 ## Baseline (Plan 2A)
 
@@ -52,6 +52,20 @@ Captured 2026-04-24 against wintty `windows@59d1f5d` (CI mode, 1 warmup + 9 meas
 | C9   | wsl-ubuntu-24.04 | rss_under_ingest_10s | C11 PRNG (1 MB) | 222.9 MB     | 223.5 MB     |
 
 C9 measures `Wintty.exe` `WorkingSet64` sampled at 500 ms cadence over a 10 s WSL `cat`-driven ingest of the C11 filtered-random fixture. WSL is picked as the driver because it's faster and less variable than pwsh on ConPTY; the KPI targets the Wintty process itself, so shell choice only affects ingest speed, not what is measured. Raw iteration spread was ~2 MB (232.6-234.5 MB, 0.27% CV).
+
+## Latency (Plan 2D)
+
+Captured 2026-04-28 against wintty `windows@da77dd2` (CI mode, 1 warmup + 30 measured iterations per cell).
+
+| Cell | Shell    | Workload                   | p50 latency | p95 latency |
+|------|----------|----------------------------|-------------|-------------|
+| C13  | pwsh-7.4 | latency_keystroke_to_glyph | 35.6 ms     | 44.7 ms     |
+
+C13 measures keystroke-to-glyph latency: synthesize one `VK_SPACE` via `SendInput`, capture `Stopwatch.GetTimestamp()` as `t=0`, then time the next Windows.Graphics.Capture frame whose full-frame BT.709 luminance diff exceeds the 50-pixel threshold. The shell is a deterministic byte-echo loop (`scripts/latency-echo.ps1`) that does `[Console]::ReadKey($true)` per keystroke and writes `\e[<row>;<col>H*` to stdout; PSReadLine is bypassed so the number is "ConPTY + wintty render pipeline", not "+ PSReadLine". The script is passed via `pwsh -NoLogo -NoProfile -EncodedCommand <base64>` to sidestep `$`/quote/brace mangling across the config-parser / argv-split / pwsh-parser boundary, same approach as Plan 2B's StartupRunner.
+
+Numbers are bounded below by the active monitor's frame interval; the developer box runs at 100 Hz (10 ms per frame) so the floor is ~5 ms. The JSON envelope's `env.display.refresh_hz` records the rate per run for cross-machine comparison. CI runners at 60 Hz will show a higher floor (~8.3 ms half-frame).
+
+The runner uses a full-frame pixel diff rather than a per-cell ROI because wintty's actual cell grid sits inside the client area with unknown padding; client-area / cols-rows division does not align to where the script paints. The 50-pixel count threshold is well below a glyph's footprint (a `*` is 30+ luminance-flipped pixels alone, more with antialias halos and the implied erase of the prior cursor) and well above antialias jitter on otherwise-unchanged frames. Cursor blink lands in the same magnitude bucket, treated as a legitimate paint signal: blinks distribute uniformly within the 1 s deadline so they show up as occasional outliers on the high tail rather than systemic bias on p50.
 
 ## Quick start
 

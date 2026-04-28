@@ -10,6 +10,7 @@ public static class KpiFactory
             "throughput_bytes_per_sec" => new ThroughputKpi(),
             "startup_seconds" => new StartupKpi(),
             "rss_peak_bytes" => new MemoryRssKpi(),
+            "latency_keystroke_to_glyph_ms" => new LatencyKpi(),
             _ => throw new NotSupportedException($"Unknown KPI '{kpiName}'"),
         };
     }
