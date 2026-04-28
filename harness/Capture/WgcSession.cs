@@ -423,13 +423,18 @@ public sealed class WgcSession : IDisposable
 
     private unsafe CapturedFrame? ReadbackFrame(nint framePtr)
     {
-        // Direct3D11CaptureFrame: SystemRelativeTime at slot 8 (after IUnknown 0-2 + IInspectable 3-5 + Surface 6 + ContentSize 7).
-        // Returns 100-ns ticks (TimeSpan-shape).
+        // Capture QPC at the moment we receive the FrameArrived callback.
+        // We tried Direct3D11CaptureFrame.SystemRelativeTime (slot 8) first
+        // because it's the GPU-recorded "frame ready" timestamp, but the
+        // returned TimeSpan was on a different epoch from
+        // Stopwatch.GetTimestamp() and produced p50 = 340 million ms
+        // post-conversion. Stopwatch.GetTimestamp() shares the same QPC
+        // tick stream as SendInputProbe.Inject's qpc0, so subtraction is
+        // straightforward. Trade-off: we lose ~hundreds of microseconds of
+        // precision (callback dispatch latency) but the value is correct.
+        var qpc = Stopwatch.GetTimestamp();
+
         var fVtable = *(nint**)framePtr;
-        var srtPtr = fVtable[8];
-        var fnSrt = (delegate* unmanaged[Stdcall]<nint, long*, int>)srtPtr;
-        long srt100ns;
-        if (fnSrt(framePtr, &srt100ns) != 0) return null;
 
         // Surface at slot 6.
         var surfPtr = fVtable[6];
@@ -475,10 +480,6 @@ public sealed class WgcSession : IDisposable
                                 y * rowBytes,
                                 rowBytes);
                         }
-
-                        // Convert SystemRelativeTime (100-ns ticks) to QPC ticks.
-                        // TimeSpan ticks tick at 10MHz; QPC at QpcFrequency.
-                        var qpc = checked((long)(srt100ns * (decimal)QpcFrequency / 10_000_000m));
 
                         // Unmap at slot 15.
                         var unmapPtr = ctxV[15];
