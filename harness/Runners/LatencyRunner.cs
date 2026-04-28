@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.Versioning;
 using System.Text;
@@ -103,13 +104,21 @@ public sealed class LatencyRunner : IKpiRunner
                 // sub-frame or even negative latency. (PR # 9 review item # 2.)
                 _ = session.DrainStaleFrames();
 
-                var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(WallClockBudgetMsPerIter);
+                // Use Stopwatch (monotonic, sub-millisecond precision)
+                // for the per-iteration deadline rather than DateTime.UtcNow
+                // which is wall-clock with ~16 ms resolution and can jump
+                // on NTP sync. See PR # 9 review item # 8.
+                var deadlineTicks = Stopwatch.GetTimestamp()
+                    + Stopwatch.Frequency * WallClockBudgetMsPerIter / 1000;
                 var hung = true;
                 double latencyMs = 0;
 
-                while (DateTime.UtcNow < deadline)
+                while (Stopwatch.GetTimestamp() < deadlineTicks)
                 {
-                    using var cts = new CancellationTokenSource(deadline - DateTime.UtcNow);
+                    var remainingMs = (int)((deadlineTicks - Stopwatch.GetTimestamp())
+                        * 1000 / Stopwatch.Frequency);
+                    if (remainingMs <= 0) break;
+                    using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(remainingMs));
                     CapturedFrame frame;
                     try { frame = await session.NextFrameAsync(cts.Token); }
                     catch (OperationCanceledException) { break; }
