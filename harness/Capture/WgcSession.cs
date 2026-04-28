@@ -69,13 +69,16 @@ public sealed class WgcSession : IDisposable
         if (w <= 0 || h <= 0)
             throw new InvalidOperationException($"Client area is empty: {w}x{h}");
 
-        // CombaseInterop.RoInitialize: returns S_OK (0) on first call,
-        // RPC_E_CHANGED_MODE (0x80010106) if a prior call selected a
-        // different apartment - which is fine for our use case (we do not
-        // pump messages on this thread). Treat both as success.
+        // CombaseInterop.RoInitialize returns:
+        //   S_OK (0)                    - first init on this thread
+        //   S_FALSE (1)                 - already initialized, same apartment
+        //   RPC_E_CHANGED_MODE          - already initialized, different apartment
+        // All three are usable for our purposes (we do not pump messages here).
+        // .NET's CLR typically pre-initializes COM on the main thread, so
+        // S_FALSE is the common path under `dotnet run`.
         var hr = CombaseInterop.RoInitialize(CombaseInterop.RO_INIT_MULTITHREADED);
         const int RPC_E_CHANGED_MODE = unchecked((int)0x80010106);
-        if (hr != 0 && hr != RPC_E_CHANGED_MODE)
+        if (hr < 0 && hr != RPC_E_CHANGED_MODE)
             throw new InvalidOperationException($"RoInitialize failed: hr=0x{hr:X8}");
 
         var session = new WgcSession(w, h);
