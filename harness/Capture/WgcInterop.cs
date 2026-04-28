@@ -25,6 +25,10 @@ internal static class WgcInterop
         new("79C3F95B-31F7-4EC2-A464-632EF5D30760");
     public static readonly Guid IID_IDirect3D11CaptureFramePoolStatics =
         new("7784056A-67AA-4D53-AE54-1088D5A8CA21");
+    // v2 hosts CreateFreeThreaded; v1 only has Create. Use v2 to avoid
+    // having to QI a separate factory.
+    public static readonly Guid IID_IDirect3D11CaptureFramePoolStatics2 =
+        new("589B103F-6BBC-5DF5-A991-02E28B3B66D5");
     public static readonly Guid IID_IDirect3D11CaptureFramePool =
         new("24EB6D22-1975-422E-82E7-780DBD8DDF24");
     public static readonly Guid IID_IGraphicsCaptureSession =

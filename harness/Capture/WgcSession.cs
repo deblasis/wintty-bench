@@ -190,12 +190,14 @@ public sealed class WgcSession : IDisposable
                 $"WindowsCreateString(FramePool) failed: hr=0x{poolClassHr:X8}");
         try
         {
-            var poolStaticsIid = WgcInterop.IID_IDirect3D11CaptureFramePoolStatics;
+            // CreateFreeThreaded lives on Statics2, NOT Statics (v1). v1 only
+            // has Create, which we cannot call from a non-STA thread.
+            var poolStaticsIid = WgcInterop.IID_IDirect3D11CaptureFramePoolStatics2;
             var hrPoolFac = CombaseInterop.RoGetActivationFactory(
                 poolClassH, in poolStaticsIid, out var poolStatics);
             if (hrPoolFac != 0)
                 throw new InvalidOperationException(
-                    $"RoGetActivationFactory(IDirect3D11CaptureFramePoolStatics) failed: hr=0x{hrPoolFac:X8}");
+                    $"RoGetActivationFactory(IDirect3D11CaptureFramePoolStatics2) failed: hr=0x{hrPoolFac:X8}");
             try
             {
                 _framePool = InvokeCreateFreeThreaded(
@@ -285,16 +287,20 @@ public sealed class WgcSession : IDisposable
     private static unsafe nint InvokeCreateFreeThreaded(
         nint poolStatics, nint device, uint pixelFormat, int numberOfBuffers, WgcInterop.SizeInt32 size)
     {
-        // IDirect3D11CaptureFramePoolStatics has 2 IInspectable methods (slots 3-5
-        // total for IUnknown+IInspectable). CreateFreeThreaded is at slot 7
-        // (after Create at 6). Verified against winrt headers.
+        // IDirect3D11CaptureFramePoolStatics2 layout:
+        //   slots 0-2: IUnknown
+        //   slots 3-5: IInspectable
+        //   slot   6 : CreateFreeThreaded (the only method on Statics2).
         var vtable = *(nint**)poolStatics;
-        var createPtr = vtable[7];
+        var createPtr = vtable[6];
         var fn = (delegate* unmanaged[Stdcall]<nint, nint, uint, int, WgcInterop.SizeInt32, nint*, int>)createPtr;
         nint outPool;
         var hr = fn(poolStatics, device, pixelFormat, numberOfBuffers, size, &outPool);
         if (hr != 0)
             throw new InvalidOperationException($"CreateFreeThreaded failed: hr=0x{hr:X8}");
+        if (outPool == nint.Zero)
+            throw new InvalidOperationException(
+                "CreateFreeThreaded returned S_OK but null outPool (wrong vtable slot or IID).");
         return outPool;
     }
 
