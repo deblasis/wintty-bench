@@ -5,6 +5,10 @@ using Xunit;
 
 namespace WinttyBench.Tests.Launchers;
 
+[CollectionDefinition("UsesUserProfileEnv", DisableParallelization = true)]
+public class UsesUserProfileEnvCollection { }
+
+[Collection("UsesUserProfileEnv")]
 public class WtAutoResolverTests
 {
     [Fact]
@@ -27,7 +31,7 @@ public class WtAutoResolverTests
     {
         // Tolerant of either resolution path: portable cache (preferred) or
         // Store install. Both end in `wt.exe` and must point at a real file.
-        // The portable cache wins if present — see Resolve_Auto_PrefersPortableCacheOverStore
+        // The portable cache wins if present -- see Resolve_Auto_PrefersPortableCacheOverStore
         // for the precedence assertion against an isolated USERPROFILE.
         var resolved = WtAutoResolver.Resolve("auto");
         Assert.True(File.Exists(resolved), $"Expected wt.exe at {resolved} but file not found");
@@ -39,7 +43,7 @@ public class WtAutoResolverTests
     {
         // Setup a fake portable WT cache in a temp profile, repoint USERPROFILE
         // at it, and verify Resolve picks the portable path even when a Store
-        // install is also present on the host. Mutates global env state — the
+        // install is also present on the host. Mutates global env state -- the
         // existing Resolve_Auto_ReturnsAnExistingWtExe test already does the
         // same, so this is consistent with the fixture's pattern.
         var tempProfile = Path.Combine(Path.GetTempPath(), "wt-resolver-test-" + Guid.NewGuid());

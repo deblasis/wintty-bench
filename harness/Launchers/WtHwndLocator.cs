@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
@@ -6,6 +7,9 @@ using System.Threading;
 
 namespace WinttyBench.Launchers;
 
+// Polling deadlines use Stopwatch.GetElapsedTime (monotonic, sub-ms
+// precision) rather than DateTime.UtcNow (wall-clock, ~16 ms tick,
+// can jump on NTP sync). See LatencyRunner.cs:117 for the precedent.
 [SupportedOSPlatform("windows")]
 public static class WtHwndLocator
 {
@@ -20,10 +24,15 @@ public static class WtHwndLocator
     // TimeoutException.
     public static nint WaitForWtHwnd(int pid, TimeSpan timeout)
     {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        var start = Stopwatch.GetTimestamp();
+        while (Stopwatch.GetElapsedTime(start) < timeout)
         {
             nint found = 0;
+            // EnumWindows is synchronous: the lambda's lifetime is bounded by this
+            // call, so a captured closure is safe. For async callbacks
+            // (SetWinEventHook, IDirect3D11* sample-grabbers), root the delegate in
+            // a field and add GC.KeepAlive at the end of the registration scope to
+            // avoid CallbackOnCollectedDelegateException.
             EnumWindows((hwnd, _lParam) =>
             {
                 if (!IsWindowVisible(hwnd)) return true;
@@ -83,8 +92,8 @@ public static class WtHwndLocator
         TimeSpan timeout)
     {
         ArgumentNullException.ThrowIfNull(excludePids);
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        var start = Stopwatch.GetTimestamp();
+        while (Stopwatch.GetElapsedTime(start) < timeout)
         {
             nint foundHwnd = 0;
             int foundPid = 0;
@@ -119,8 +128,8 @@ public static class WtHwndLocator
     // focus quirks on launch.
     public static void WaitForForeground(nint expectedHwnd, TimeSpan timeout)
     {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
+        var start = Stopwatch.GetTimestamp();
+        while (Stopwatch.GetElapsedTime(start) < timeout)
         {
             if (GetForegroundWindow() == expectedHwnd) return;
             Thread.Sleep(50);

@@ -17,8 +17,11 @@ public sealed record ParsedArgs(
 
 public static class BenchHost
 {
-    private static readonly HashSet<string> ValidModes = ["ci", "marketing"];
-    private static readonly HashSet<string> KnownTerminals = ["wintty", "wt"];
+    private static readonly HashSet<string> ValidModes =
+        new(["ci", "marketing"], StringComparer.Ordinal);
+
+    private static readonly HashSet<string> KnownTerminals =
+        new(["wintty", "wt"], StringComparer.Ordinal);
 
     public static ParsedArgs ParseArgs(IReadOnlyList<string> args)
     {
@@ -142,6 +145,14 @@ public static class BenchHost
                 : Path.Combine("results", string.Create(CultureInfo.InvariantCulture, $"{DateTime.UtcNow:yyyy-MM-dd}-{SanitizeForPath(parsed.ReleaseTag!)}"));
             Directory.CreateDirectory(outDir);
 
+            // Resolve target paths once before iteration so any portable-cache or
+            // PATH-resolution failure surfaces at startup, not 8 minutes into a run.
+            var targetExeByTerminal = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var terminalName in parsed.Terminals)
+            {
+                targetExeByTerminal[terminalName] = ResolveTargetExePath(terminalName, parsed);
+            }
+
             var resolver = new FixtureResolver(new WslFixtureCache());
 
             // VersionGate runs once before any iterations; gate failures
@@ -149,6 +160,12 @@ public static class BenchHost
             if (!string.IsNullOrEmpty(parsed.RequireVersion))
             {
                 var pins = VersionGate.Parse(parsed.RequireVersion);
+                // TODO(plan3a-followup): env.WtVersion comes from EnvProbe.ProbeWtVersion,
+                // which queries the AppX package -- i.e. the user's Store WT, not the
+                // resolved (potentially portable) wt.exe at parsed.TargetWtPath. This means
+                // --require-version=wt:<v> compares against the Store install, not the
+                // launched binary. Replace with FileVersionInfo.GetVersionInfo on the
+                // resolved path once the WT measurement work resumes.
                 var detected = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
                     ["wt"] = env.WtVersion,
@@ -173,7 +190,7 @@ public static class BenchHost
                     Console.WriteLine(string.Create(CultureInfo.InvariantCulture,
                         $"[{cellId}/{terminalName}] {cell.Shell} x {cell.Workload} ({cell.Kpi})"));
 
-                    var targetForTerminal = ResolveTargetExePath(terminalName, parsed);
+                    var targetForTerminal = targetExeByTerminal[terminalName];
 
                     var samples = runner.RunAsync(cell, terminalName, targetForTerminal, profile, resolver).GetAwaiter().GetResult();
 

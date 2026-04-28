@@ -33,6 +33,8 @@ public sealed class WinttyLauncher : ILauncher
             RedirectStandardOutput = false,
             RedirectStandardError = false,
         };
+        // ProcessStartInfo.Environment is pre-populated with the parent's env;
+        // these entries override-or-add, they do not replace.
         foreach (var (k, v) in BuildEnv(configRoot))
         {
             startInfo.Environment[k] = v;

@@ -28,6 +28,8 @@ public sealed class WtLauncher : ILauncher
             Arguments = "-p WinttyBenchProfile",
             UseShellExecute = false,
         };
+        // ProcessStartInfo.Environment is pre-populated with the parent's env;
+        // these entries override-or-add, they do not replace.
         foreach (var (k, v) in BuildEnv(configRoot))
         {
             startInfo.Environment[k] = v;
@@ -73,13 +75,6 @@ public sealed class WtLauncher : ILauncher
                     "Windows Terminal host (CASCADIA window owner) did not appear within 10s after wt.exe invocation",
                     ex);
             }
-        }
-        else
-        {
-            // Non-Windows path: the harness is Windows-only so this
-            // branch is unreachable in practice. Match WinttyLauncher's
-            // shape rather than throwing here.
-            throw new PlatformNotSupportedException("WtLauncher requires Windows.");
         }
 
         Process winttermProc;
@@ -142,13 +137,20 @@ public sealed class WtLauncher : ILauncher
         // some locales.
         var colsStr = cols.ToString(CultureInfo.InvariantCulture);
         var rowsStr = rows.ToString(CultureInfo.InvariantCulture);
+        // JSON-encode shellCommand so internal " or \ don't malform the
+        // settings.json. JsonSerializer.Serialize on a string returns the
+        // value WITH surrounding quotes, e.g. "bash -c \"x\"" -- embed it
+        // raw into the template (no extra outer quotes). Use the source-
+        // generated string TypeInfo for AOT/trim safety (IL2026/IL3050).
+        var commandlineJson = System.Text.Json.JsonSerializer.Serialize(
+            shellCommand, WinttyBench.ResultSchemaContext.Default.String);
         var json = $$"""
 {
   "profiles": {
     "list": [
       {
         "name": "WinttyBenchProfile",
-        "commandline": "{{shellCommand}}",
+        "commandline": {{commandlineJson}},
         "initialCols": {{colsStr}},
         "initialRows": {{rowsStr}},
         "closeOnExit": "always",

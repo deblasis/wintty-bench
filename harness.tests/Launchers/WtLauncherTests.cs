@@ -38,6 +38,26 @@ public class WtLauncherTests
     }
 
     [Fact]
+    public void WriteSettings_EscapesEmbeddedQuotes()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "wt-launcher-test-" + System.Guid.NewGuid());
+        try
+        {
+            WtLauncher.WriteSettings(dir, "bash -c \"echo hi\"", cols: 80, rows: 24);
+            var settingsPath = Path.Combine(dir, "settings.json");
+            var content = File.ReadAllText(settingsPath);
+            // The JSON must parse without error and the commandline must round-trip.
+            using var doc = System.Text.Json.JsonDocument.Parse(content);
+            var profile = doc.RootElement.GetProperty("profiles").GetProperty("list")[0];
+            Assert.Equal("bash -c \"echo hi\"", profile.GetProperty("commandline").GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void BuildEnv_SetsWtSettingsPath()
     {
         var env = WtLauncher.BuildEnv("C:/foo/bar");

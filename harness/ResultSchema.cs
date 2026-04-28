@@ -55,4 +55,5 @@ public sealed record FairnessCapture(
     DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
 [JsonSerializable(typeof(ResultEnvelope))]
 [JsonSerializable(typeof(IterationSample))]
+[JsonSerializable(typeof(string))]
 public partial class ResultSchemaContext : JsonSerializerContext { }

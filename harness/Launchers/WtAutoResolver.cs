@@ -13,7 +13,7 @@ public static class WtAutoResolver
     //
     // Resolution order for "auto":
     //   1. Portable WT cache (~/.cache/wintty-bench/wt/<version>/wt.exe), highest version wins.
-    //      Preferred because Store WT is single-instance per AppX identity — new
+    //      Preferred because Store WT is single-instance per AppX identity -- new
     //      `wt.exe` spawns open as tabs in the user's daily-driver window, which
     //      breaks process isolation for the bench.
     //   2. Microsoft Store install via App Execution Aliases (with stderr warning).
@@ -29,7 +29,7 @@ public static class WtAutoResolver
             return spec;
         }
 
-        // 1. Portable WT cache — preferred to avoid Monarch single-instance behavior.
+        // 1. Portable WT cache -- preferred to avoid Monarch single-instance behavior.
         // Read $USERPROFILE from env first (matches the setup-wt-portable.ps1 path
         // exactly and lets tests redirect the cache by setting the env var); fall
         // back to SpecialFolder.UserProfile if the env var is unset.
@@ -49,7 +49,7 @@ public static class WtAutoResolver
             }
         }
 
-        // 2. Microsoft Store install via App Execution Aliases — works but warns
+        // 2. Microsoft Store install via App Execution Aliases -- works but warns
         //    because the Store install is single-instance per user (Monarch).
         var localApps = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
