@@ -59,7 +59,7 @@ Captured 2026-04-28 against wintty `windows@da77dd2` (CI mode, 1 warmup + 30 mea
 
 | Cell | Shell    | Workload                   | p50 latency | p95 latency |
 |------|----------|----------------------------|-------------|-------------|
-| C13  | pwsh-7.4 | latency_keystroke_to_glyph | 37.8 ms     | 53.3 ms     |
+| C13  | pwsh-7.4 | latency_keystroke_to_glyph | 35.6 ms     | 44.7 ms     |
 
 C13 measures keystroke-to-glyph latency: synthesize one `VK_SPACE` via `SendInput`, capture `Stopwatch.GetTimestamp()` as `t=0`, then time the next Windows.Graphics.Capture frame whose full-frame BT.709 luminance diff exceeds the 50-pixel threshold. The shell is a deterministic byte-echo loop (`scripts/latency-echo.ps1`) that does `[Console]::ReadKey($true)` per keystroke and writes `\e[<row>;<col>H*` to stdout; PSReadLine is bypassed so the number is "ConPTY + wintty render pipeline", not "+ PSReadLine". The script is passed via `pwsh -NoLogo -NoProfile -EncodedCommand <base64>` to sidestep `$`/quote/brace mangling across the config-parser / argv-split / pwsh-parser boundary, same approach as Plan 2B's StartupRunner.
 
