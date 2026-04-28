@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.Versioning;
+using System.Text;
 using WinttyBench.Capture;
 using WinttyBench.Cells;
 using WinttyBench.Fixtures;
@@ -43,9 +44,19 @@ public sealed class LatencyRunner : IKpiRunner
             throw new FileNotFoundException(
                 $"latency-echo.ps1 missing at {scriptPath}", scriptPath);
 
+        // pwsh -File "C:\..." gets mangled by ghostty's config parser
+        // (Plan 2B hit the same wall in StartupRunner.BuildPwshStartupCommand
+        // when passing scripts through the `command =` config field). The
+        // parser eats `$VAR` references, strips/normalizes quotes, and may
+        // misinterpret backslashes. -EncodedCommand is base64 (alnum + /+=)
+        // which every parsing layer passes through verbatim; pwsh decodes
+        // it natively as UTF-16LE. Read the .ps1 contents at runtime so the
+        // file remains the single source of truth and stays test-driven.
+        var scriptText = File.ReadAllText(scriptPath);
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(scriptText));
         var launcher = new WinttyLauncher();
         var shellCmd = string.Create(CultureInfo.InvariantCulture,
-            $"pwsh -NoLogo -NoProfile -File \"{scriptPath}\"");
+            $"pwsh -NoLogo -NoProfile -EncodedCommand {encoded}");
 
         var launch = launcher.Launch(new LaunchRequest(
             TargetExePath: winttyExe,
