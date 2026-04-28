@@ -284,6 +284,20 @@ public sealed class WgcSession : IDisposable
         return _frames.Reader.ReadAsync(ct).AsTask();
     }
 
+    // Discards any frames currently buffered in the channel. Used by the
+    // runner immediately after SendInput.Inject so the next NextFrameAsync
+    // call cannot return a frame whose FrameArrived callback fired BEFORE
+    // the keystroke was injected. Without this, the bounded-channel
+    // drop-oldest semantics let through pre-keystroke frames whose ROI
+    // diff against baseline is just cursor blink, producing iters with
+    // sub-frame or even negative latency.
+    public int DrainStaleFrames()
+    {
+        var dropped = 0;
+        while (_frames.Reader.TryRead(out _)) dropped++;
+        return dropped;
+    }
+
     private static unsafe nint InvokeCreateFreeThreaded(
         nint poolStatics, nint device, uint pixelFormat, int numberOfBuffers, WgcInterop.SizeInt32 size)
     {

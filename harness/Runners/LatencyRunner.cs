@@ -96,6 +96,13 @@ public sealed class LatencyRunner : IKpiRunner
 
                 var qpc0 = SendInputProbe.Inject(SendInputInterop.VK_SPACE);
 
+                // Discard any frame whose FrameArrived callback fired between
+                // the baseline read and our Inject. Without this, the bounded
+                // drop-oldest channel can return a stale frame and the diff
+                // against baseline fires on cursor blink alone, recording
+                // sub-frame or even negative latency. (PR # 9 review item # 2.)
+                _ = session.DrainStaleFrames();
+
                 var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(WallClockBudgetMsPerIter);
                 var hung = true;
                 double latencyMs = 0;
