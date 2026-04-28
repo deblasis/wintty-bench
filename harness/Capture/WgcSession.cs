@@ -361,9 +361,15 @@ public sealed class WgcSession : IDisposable
 
     private static unsafe void InvokeStartCapture(nint session)
     {
-        // IGraphicsCaptureSession::StartCapture is at slot 9.
+        // IGraphicsCaptureSession layout:
+        //   slots 0-2: IUnknown
+        //   slots 3-5: IInspectable
+        //   slot   6 : StartCapture (the only method on the interface).
+        // IClosable is a separate interface (IID 30D5A829-...) reachable via
+        // QI; it does NOT appear in this vtable. The plan's slot-9 was past
+        // the vtable end and produced a STATUS_ACCESS_VIOLATION.
         var vtable = *(nint**)session;
-        var startPtr = vtable[9];
+        var startPtr = vtable[6];
         var fn = (delegate* unmanaged[Stdcall]<nint, int>)startPtr;
         var hr = fn(session);
         if (hr != 0)
@@ -495,44 +501,26 @@ public sealed class WgcSession : IDisposable
 
     public void Dispose()
     {
-        // Stop capture first, then unhook the event, then release in reverse
-        // order of acquisition.
-        if (_captureSession != nint.Zero)
+        // Unhook FrameArrived first so no callback fires after Release runs,
+        // then drop refs in reverse order of acquisition. We do NOT call
+        // IClosable.Close on the session or framepool - IClosable is a
+        // separate interface (IID 30D5A829-...) reachable only via QI; it
+        // does not appear in either object's primary vtable. Relying on
+        // ComRelease to drive refcount->0 is sufficient: the WGC objects'
+        // destructors stop capture and free resources internally.
+        if (_framePool != nint.Zero && _frameArrivedToken != 0)
         {
-            // IGraphicsCaptureSession is IClosable (slot 6 = Close).
-            unsafe
-            {
-                var v = *(nint**)_captureSession;
-                var closePtr = v[6];
-                var fn = (delegate* unmanaged[Stdcall]<nint, int>)closePtr;
-                _ = fn(_captureSession);
-            }
-            ComRelease(_captureSession); _captureSession = nint.Zero;
-        }
-        if (_framePool != nint.Zero)
-        {
-            // FrameArrivedRemove at slot 9.
-            if (_frameArrivedToken != 0)
-            {
-                unsafe
-                {
-                    var v = *(nint**)_framePool;
-                    var rmPtr = v[9];
-                    var fn = (delegate* unmanaged[Stdcall]<nint, long, int>)rmPtr;
-                    _ = fn(_framePool, _frameArrivedToken);
-                }
-                _frameArrivedToken = 0;
-            }
-            // FramePool is also IClosable (slot 11).
             unsafe
             {
                 var v = *(nint**)_framePool;
-                var closePtr = v[11];
-                var fn = (delegate* unmanaged[Stdcall]<nint, int>)closePtr;
-                _ = fn(_framePool);
+                var rmPtr = v[9]; // FrameArrivedRemove on IDirect3D11CaptureFramePool
+                var fn = (delegate* unmanaged[Stdcall]<nint, long, int>)rmPtr;
+                _ = fn(_framePool, _frameArrivedToken);
             }
-            ComRelease(_framePool); _framePool = nint.Zero;
+            _frameArrivedToken = 0;
         }
+        if (_captureSession != nint.Zero) { ComRelease(_captureSession); _captureSession = nint.Zero; }
+        if (_framePool != nint.Zero) { ComRelease(_framePool); _framePool = nint.Zero; }
         if (_stagingTexture != nint.Zero) { ComRelease(_stagingTexture); _stagingTexture = nint.Zero; }
         if (_captureItem != nint.Zero) { ComRelease(_captureItem); _captureItem = nint.Zero; }
         if (_graphicsDevice != nint.Zero) { ComRelease(_graphicsDevice); _graphicsDevice = nint.Zero; }
