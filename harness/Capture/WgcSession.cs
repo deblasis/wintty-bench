@@ -400,11 +400,26 @@ public sealed class WgcSession : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     private delegate int FrameArrivedNativeDelegate(nint thisPtr, nint sender, nint args);
 
+    // Tracks how many WGC pool-thread callbacks are currently inside
+    // OnFrameArrivedNative. Dispose waits for this to reach zero AFTER
+    // unhooking FrameArrived so a callback in-flight when Dispose runs
+    // cannot dereference released COM state.
+    private int _callbackActive;
+    private volatile bool _disposed;
+
     private int OnFrameArrivedNative(nint thisPtr, nint sender, nint args)
     {
         // thisPtr is the EventHandlerShim instance; we ignore it.
+        // The Increment/Decrement bracket plus the Dispose-side spin-wait
+        // forms the synchronization barrier (see Dispose).
+        Interlocked.Increment(ref _callbackActive);
         try
         {
+            // If Dispose flipped _disposed between FrameArrivedRemove and
+            // the spin-wait, bail out before touching any COM pointers
+            // that might be mid-release.
+            if (_disposed) return 0;
+
             var frame = InvokeTryGetNextFrame(sender);
             if (frame == nint.Zero) return 0;
             try
@@ -421,6 +436,10 @@ public sealed class WgcSession : IDisposable
         catch
         {
             // Swallow: a single bad frame should not tear down the session.
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _callbackActive);
         }
         return 0; // S_OK
     }
@@ -520,13 +539,20 @@ public sealed class WgcSession : IDisposable
 
     public void Dispose()
     {
-        // Unhook FrameArrived first so no callback fires after Release runs,
-        // then drop refs in reverse order of acquisition. We do NOT call
-        // IClosable.Close on the session or framepool - IClosable is a
-        // separate interface (IID 30D5A829-...) reachable only via QI; it
-        // does not appear in either object's primary vtable. Relying on
-        // ComRelease to drive refcount->0 is sufficient: the WGC objects'
-        // destructors stop capture and free resources internally.
+        // Step 1: flip _disposed so any callback that's racing against
+        // FrameArrivedRemove sees the flag and bails before touching COM.
+        // Step 2: unhook FrameArrived so no NEW callbacks dispatch.
+        // Step 3: spin-wait until any in-flight callback exits its
+        // Increment/Decrement bracket. Only after this is it safe to
+        // ComRelease the underlying objects.
+        // Step 4: ComRelease in reverse order of acquisition. We do NOT
+        // call IClosable.Close - IClosable is a separate interface (IID
+        // 30D5A829-...) reachable only via QI; it does not appear in
+        // either object's primary vtable. Refcount->0 via ComRelease is
+        // sufficient; the WGC objects' destructors stop capture and free
+        // resources internally.
+        _disposed = true;
+
         if (_framePool != nint.Zero && _frameArrivedToken != 0)
         {
             unsafe
@@ -538,6 +564,19 @@ public sealed class WgcSession : IDisposable
             }
             _frameArrivedToken = 0;
         }
+
+        // Wait out any callback that was already mid-flight when we
+        // unhooked. SpinWait yields after a few cycles so it does not
+        // burn a core if a callback is genuinely stuck. Bound the wait
+        // so a hung callback can't deadlock Dispose forever.
+        var spin = new SpinWait();
+        var deadline = Stopwatch.GetTimestamp() + Stopwatch.Frequency; // 1 s
+        while (Volatile.Read(ref _callbackActive) > 0
+            && Stopwatch.GetTimestamp() < deadline)
+        {
+            spin.SpinOnce();
+        }
+
         if (_captureSession != nint.Zero) { ComRelease(_captureSession); _captureSession = nint.Zero; }
         if (_framePool != nint.Zero) { ComRelease(_framePool); _framePool = nint.Zero; }
         if (_stagingTexture != nint.Zero) { ComRelease(_stagingTexture); _stagingTexture = nint.Zero; }
