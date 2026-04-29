@@ -90,4 +90,47 @@ public class ThroughputRunnerTests
             try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
         }
     }
+
+    [Fact]
+    public void BuildShellCommandForCell_Pwsh_ScriptBodyTouchesSentinel()
+    {
+        // Lock down the script-body contract the whole fix depends on:
+        // bash/pwsh actually touches the iter's specific sentinel, not the
+        // dir or some derived path.
+        var sentinel = "C:\\Temp\\unique-pwsh-sentinel.marker";
+        var (_, path) = ThroughputRunner.BuildShellCommandForCell(
+            PwshCell, "C:\\fixtures\\test.txt", sentinel);
+        try
+        {
+            var body = File.ReadAllText(path);
+            Assert.Contains(sentinel, body);
+            Assert.Contains("New-Item -ItemType File -Force -Path", body);
+        }
+        finally
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public void BuildShellCommandForCell_Wsl_ScriptBodyTouchesSentinelInWslPath()
+    {
+        // The wsl variant must translate the Windows sentinel path to its
+        // /mnt/c/... form before emitting the touch; otherwise bash would
+        // try (and fail) to create a file at a path with a drive letter.
+        var sentinel = "C:\\Temp\\unique-wsl-sentinel.marker";
+        var (_, path) = ThroughputRunner.BuildShellCommandForCell(
+            WslCell, "/mnt/c/fixtures/test.txt", sentinel);
+        try
+        {
+            var body = File.ReadAllText(path);
+            Assert.Contains("/mnt/c/Temp/unique-wsl-sentinel.marker", body);
+            Assert.Contains("touch '", body);
+            Assert.DoesNotContain("C:\\", body);
+        }
+        finally
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
+        }
+    }
 }

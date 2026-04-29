@@ -101,22 +101,25 @@ public sealed class ThroughputRunner : IKpiRunner
     internal static (string Command, string ScriptPath) BuildShellCommandForCell(
         Cell cell, string fixtureShellPath, string sentinelPath)
     {
-        // Ghostty's Windows termio wraps any command containing cmd.exe
-        // metacharacters ('|', '&', '<', '>', '(', ')', '^', '%', '!') in
-        // `cmd.exe /c ...`, which mangles nested quotes. Put the shell body
-        // in a temp script file instead so the `command = ...` value in
-        // the config is a plain argv with no shell metacharacters.
+        // PER-ITER UNIQUE script name (Guid suffix): each iter has its own
+        // file, so a still-running prior wsl-bash never observes the next
+        // iter's overwritten content. A stable name was racy because vmcompute-
+        // managed wsl processes survive Job.KILL_ON_JOB_CLOSE on the WT host;
+        // iter N's bash, on its next read, would see iter N+1's content and
+        // `touch` iter N+1's sentinel before iter N+1 even started its
+        // stopwatch.
         //
-        // Script names are PER-ITER unique (Guid suffix). A stable name was
-        // racy: if iter N's wsl-bash was still running (vmcompute-managed
-        // wsl processes survive Job.KILL_ON_JOB_CLOSE on the WT host),
-        // iter N+1's overwrite of the same path could be observed by iter
-        // N's bash on its next read, which would then `touch` iter N+1's
-        // sentinel before iter N+1 even started its stopwatch.
+        // The script-on-disk approach (rather than inlining into commandline)
+        // exists because Ghostty's Windows termio wraps any command containing
+        // cmd.exe metacharacters ('|', '&', '<', '>', '(', ')', '^', '%', '!')
+        // in `cmd.exe /c ...`, which mangles nested quotes. Putting the shell
+        // body in a temp script file keeps the `command = ...` value in the
+        // config a plain argv with no shell metacharacters.
         var scriptsDir = Path.Combine(Path.GetTempPath(), "wintty-bench-scripts");
         Directory.CreateDirectory(scriptsDir);
-        var scriptStem = string.Create(System.Globalization.CultureInfo.InvariantCulture,
-            $"{cell.Id}-{Guid.NewGuid():N}");
+        // Guid:N is hex-only and locale-invariant by definition; no IFormat-
+        // Provider needed.
+        var scriptStem = $"{cell.Id}-{Guid.NewGuid():N}";
 
         return cell.Shell switch
         {
