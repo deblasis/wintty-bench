@@ -50,6 +50,15 @@ public static class EnvProbe
         {
             return ("unknown", "unknown");
         }
+        catch (ArgumentException)
+        {
+            // FileVersionInfo.GetVersionInfo also throws ArgumentException on
+            // structurally invalid paths (e.g. embedded \0, illegal chars).
+            // The empty-path case is handled by the early-return above; this
+            // catch keeps the "silently degrade" contract robust against any
+            // future caller that passes a malformed but non-empty string.
+            return ("unknown", "unknown");
+        }
     }
 
     private static string ProbeWtVersion()
