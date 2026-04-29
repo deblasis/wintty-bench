@@ -75,6 +75,63 @@ public class WtLauncherTests
     }
 
     [Fact]
+    public void WriteFragment_TrailingSlashOnDir_FilenameUsesLeafName()
+    {
+        // Locks down the leaf-name extraction in WriteFragment so a future
+        // refactor that drops the TrimEnd doesn't silently put the JSON at
+        // <dir>\.json (empty leaf), which WT would not load.
+        var bare = Path.Combine(Path.GetTempPath(), "wt-launcher-test-" + System.Guid.NewGuid());
+        var dirWithSlash = bare + Path.DirectorySeparatorChar;
+        try
+        {
+            WtLauncher.WriteFragment(dirWithSlash, "pwsh", cols: 80, rows: 24);
+            var leaf = Path.GetFileName(bare);
+            Assert.True(File.Exists(Path.Combine(bare, leaf + ".json")));
+        }
+        finally
+        {
+            if (Directory.Exists(bare)) Directory.Delete(bare, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SweepLegacyFragments_DeletesHyphenSuffixedDirs_LeavesPlainDir()
+    {
+        // Pins the regex literal: pattern wintty-bench-* must match the
+        // legacy GUID-suffixed dirs and NOT the live "wintty-bench" stable
+        // dir. A future refactor that broadens the pattern would silently
+        // delete the live profile mid-run.
+        var fragRoot = Path.Combine(Path.GetTempPath(), "wt-sweep-test-" + System.Guid.NewGuid());
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(fragRoot, "wintty-bench"));
+            Directory.CreateDirectory(Path.Combine(fragRoot, "wintty-bench-abc123"));
+            Directory.CreateDirectory(Path.Combine(fragRoot, "wintty-bench-def456"));
+            Directory.CreateDirectory(Path.Combine(fragRoot, "Microsoft.WSL"));
+
+            WtLauncher.SweepLegacyFragments(fragRoot);
+
+            Assert.True(Directory.Exists(Path.Combine(fragRoot, "wintty-bench")), "stable dir must survive sweep");
+            Assert.False(Directory.Exists(Path.Combine(fragRoot, "wintty-bench-abc123")), "legacy dir must be swept");
+            Assert.False(Directory.Exists(Path.Combine(fragRoot, "wintty-bench-def456")), "legacy dir must be swept");
+            Assert.True(Directory.Exists(Path.Combine(fragRoot, "Microsoft.WSL")), "unrelated dirs must survive");
+        }
+        finally
+        {
+            if (Directory.Exists(fragRoot)) Directory.Delete(fragRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SweepLegacyFragments_NoFragmentRoot_NoThrow()
+    {
+        // Pins the !Directory.Exists short-circuit: callers (Launch) invoke
+        // sweep before any iter has a chance to create the Fragments root.
+        WtLauncher.SweepLegacyFragments(Path.Combine(Path.GetTempPath(),
+            "wt-sweep-nonexistent-" + System.Guid.NewGuid()));
+    }
+
+    [Fact]
     [SupportedOSPlatform("windows")]
     public void WtClassName_MatchesCascadiaHostingWindowClass()
     {

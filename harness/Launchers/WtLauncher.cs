@@ -11,6 +11,11 @@ public sealed class WtLauncher : ILauncher
     // Timing wt.exe would miss the actual window startup.
     public string ExpectedProcessName => "WindowsTerminal";
 
+    // Single source of truth for the profile name used in the fragment JSON
+    // and the `-p` CLI argument. Lifted to a const so the two sites can't
+    // drift independently.
+    private const string ProfileName = "WinttyBenchProfile";
+
     public LaunchHandle Launch(LaunchRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -37,7 +42,7 @@ public sealed class WtLauncher : ILauncher
         var startInfo = new ProcessStartInfo
         {
             FileName = request.TargetExePath,
-            Arguments = "-p WinttyBenchProfile",
+            Arguments = "-p " + ProfileName,
             UseShellExecute = false,
         };
 
@@ -60,7 +65,19 @@ public sealed class WtLauncher : ILauncher
             ? WtHwndLocator.SnapshotCascadiaPids()
             : new HashSet<int>();
 
-        Process.Start(startInfo);
+        // Surface a structured failure if wt.exe can't even start (missing,
+        // quarantined, ACL-denied) instead of letting the raw Win32Exception
+        // bubble through LatencyRunner / ThroughputRunner.
+        try
+        {
+            Process.Start(startInfo);
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            throw new InvalidOperationException(
+                string.Create(CultureInfo.InvariantCulture,
+                    $"Failed to start wt.exe at '{request.TargetExePath}'"), ex);
+        }
 
         // Poll for the NEW WT host: a CASCADIA window whose owning PID
         // is not in the pre-spawn snapshot. The HWND identifies the
@@ -129,6 +146,9 @@ public sealed class WtLauncher : ILauncher
         {
             Process = measurable,
             ConfigRoot = fragmentDir,
+            // Stable shared dir, reused across iters -- see field comment
+            // and the Launch-method block above.
+            KeepConfigRoot = true,
             WindowHandle = hwnd != 0 ? hwnd : null,
             Job = job,
         };
@@ -151,24 +171,41 @@ public sealed class WtLauncher : ILauncher
         // Interlocked guard so concurrent first-launches in the same process
         // only sweep once. The bench is single-threaded today, but the static
         // is defense-in-depth for future parallel callers.
-        //
-        // Pattern wintty-bench-* (with trailing hyphen) targets only the
-        // legacy GUID-suffixed dirs from an earlier broken iteration; the
-        // current stable dir is plain "wintty-bench" (no hyphen) so it's
-        // not matched.
         if (Interlocked.Exchange(ref s_swept, 1) != 0) return;
+        SweepLegacyFragments(fragmentRoot);
+    }
+
+    // Internal for tests (no once-guard, invoked directly).
+    //
+    // Pattern wintty-bench-* (with trailing hyphen) targets only the
+    // legacy GUID-suffixed dirs from an earlier broken iteration; the
+    // current stable dir is plain "wintty-bench" (no hyphen) so it's
+    // not matched. Broadening the pattern to "wintty-bench*" would
+    // erroneously delete the live profile dir mid-run.
+    internal static void SweepLegacyFragments(string fragmentRoot)
+    {
         try
         {
             if (!Directory.Exists(fragmentRoot)) return;
             foreach (var d in Directory.EnumerateDirectories(fragmentRoot, "wintty-bench-*"))
             {
                 try { Directory.Delete(d, recursive: true); }
-                catch (IOException) { /* best effort */ }
-                catch (UnauthorizedAccessException) { /* best effort */ }
+                catch (Exception ex) when (ex is IOException
+                    or UnauthorizedAccessException
+                    or DirectoryNotFoundException
+                    or System.Security.SecurityException)
+                {
+                    /* best effort */
+                }
             }
         }
-        catch (IOException) { /* best effort */ }
-        catch (UnauthorizedAccessException) { /* best effort */ }
+        catch (Exception ex) when (ex is IOException
+            or UnauthorizedAccessException
+            or DirectoryNotFoundException
+            or System.Security.SecurityException)
+        {
+            /* best effort */
+        }
     }
 
     public static void WriteFragment(string fragmentDir, string shellCommand, int cols, int rows)
@@ -196,7 +233,7 @@ public sealed class WtLauncher : ILauncher
 {
   "profiles": [
     {
-      "name": "WinttyBenchProfile",
+      "name": "{{ProfileName}}",
       "commandline": {{commandlineJson}},
       "initialCols": {{colsStr}},
       "initialRows": {{rowsStr}},
@@ -212,6 +249,13 @@ public sealed class WtLauncher : ILauncher
         // fragment is easy to attribute during debugging.
         var fragmentName = Path.GetFileName(fragmentDir
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        File.WriteAllText(Path.Combine(fragmentDir, fragmentName + ".json"), json);
+        var finalPath = Path.Combine(fragmentDir, fragmentName + ".json");
+        // Atomic write: write to a sibling temp file then rename. WT's
+        // fragment watcher can fire on the file mid-flight; without this,
+        // a partial JSON would parse-fail and the fragment would silently
+        // drop until the next iter.
+        var tempPath = finalPath + ".tmp";
+        File.WriteAllText(tempPath, json);
+        File.Move(tempPath, finalPath, overwrite: true);
     }
 }
