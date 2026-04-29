@@ -20,6 +20,14 @@ public sealed class LaunchHandle : IDisposable
     public required MeasurableProcess Process { get; init; }
     public required string ConfigRoot { get; init; }
 
+    // When true, Dispose leaves ConfigRoot intact. WtLauncher uses a
+    // stable shared fragment dir under %LOCALAPPDATA%\Microsoft\Windows
+    // Terminal\Fragments\wintty-bench\ that's reused across iterations;
+    // recursively deleting it between iters would defeat the stable-source
+    // invariant the comments in WtLauncher.Launch defend. Per-launch temp
+    // dirs (the Wintty launcher) keep the default false.
+    public bool KeepConfigRoot { get; init; }
+
     // Optional JobObject that contains Process and all its descendants.
     // When set, disposing it is the canonical kill path: CloseHandle with
     // KILL_ON_JOB_CLOSE reaps everything in one shot, even descendants that
@@ -42,6 +50,7 @@ public sealed class LaunchHandle : IDisposable
         // a no-op (already gone) or a belt-and-braces fallback.
         Job?.Dispose();
         Process.Kill();
+        if (KeepConfigRoot) return;
         try
         {
             if (Directory.Exists(ConfigRoot)) Directory.Delete(ConfigRoot, recursive: true);
