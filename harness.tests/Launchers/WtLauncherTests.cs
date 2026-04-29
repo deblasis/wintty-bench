@@ -9,18 +9,22 @@ namespace WinttyBench.Tests.Launchers;
 public class WtLauncherTests
 {
     [Fact]
-    public void WriteSettings_PinsInitialColsRowsAndCloseOnExit()
+    public void WriteFragment_PinsInitialColsRowsAndCloseOnExit()
     {
         var dir = Path.Combine(Path.GetTempPath(), "wt-launcher-test-" + System.Guid.NewGuid());
         try
         {
-            WtLauncher.WriteSettings(dir, "pwsh -NoLogo", cols: 120, rows: 32);
+            WtLauncher.WriteFragment(dir, "pwsh -NoLogo", cols: 120, rows: 32);
 
-            var settingsPath = Path.Combine(dir, "settings.json");
-            Assert.True(File.Exists(settingsPath));
+            // Filename matches the dir's leaf name (see WriteFragment comment).
+            var fragmentName = Path.GetFileName(dir);
+            var fragmentPath = Path.Combine(dir, fragmentName + ".json");
+            Assert.True(File.Exists(fragmentPath));
 
-            using var doc = JsonDocument.Parse(File.ReadAllText(settingsPath));
-            var profile = doc.RootElement.GetProperty("profiles").GetProperty("list")[0];
+            using var doc = JsonDocument.Parse(File.ReadAllText(fragmentPath));
+            // Top-level "profiles" is an array in the fragment shape -- not
+            // nested under "list" the way the main settings.json schema is.
+            var profile = doc.RootElement.GetProperty("profiles")[0];
 
             Assert.Equal("pwsh -NoLogo", profile.GetProperty("commandline").GetString());
             Assert.Equal(120, profile.GetProperty("initialCols").GetInt32());
@@ -28,8 +32,8 @@ public class WtLauncherTests
             Assert.Equal("always", profile.GetProperty("closeOnExit").GetString());
             Assert.Equal("WinttyBenchProfile", profile.GetProperty("name").GetString());
 
-            var defaultProfile = doc.RootElement.GetProperty("defaultProfile").GetString();
-            Assert.Equal("WinttyBenchProfile", defaultProfile);
+            // Fragments cannot set defaultProfile; the bench selects via `-p`.
+            Assert.False(doc.RootElement.TryGetProperty("defaultProfile", out _));
         }
         finally
         {
@@ -38,17 +42,19 @@ public class WtLauncherTests
     }
 
     [Fact]
-    public void WriteSettings_EscapesEmbeddedQuotes()
+    public void WriteFragment_EscapesEmbeddedQuotes()
     {
         var dir = Path.Combine(Path.GetTempPath(), "wt-launcher-test-" + System.Guid.NewGuid());
         try
         {
-            WtLauncher.WriteSettings(dir, "bash -c \"echo hi\"", cols: 80, rows: 24);
-            var settingsPath = Path.Combine(dir, "settings.json");
-            var content = File.ReadAllText(settingsPath);
+            WtLauncher.WriteFragment(dir, "bash -c \"echo hi\"", cols: 80, rows: 24);
+
+            var fragmentName = Path.GetFileName(dir);
+            var fragmentPath = Path.Combine(dir, fragmentName + ".json");
+            var content = File.ReadAllText(fragmentPath);
             // The JSON must parse without error and the commandline must round-trip.
-            using var doc = System.Text.Json.JsonDocument.Parse(content);
-            var profile = doc.RootElement.GetProperty("profiles").GetProperty("list")[0];
+            using var doc = JsonDocument.Parse(content);
+            var profile = doc.RootElement.GetProperty("profiles")[0];
             Assert.Equal("bash -c \"echo hi\"", profile.GetProperty("commandline").GetString());
         }
         finally
@@ -58,11 +64,14 @@ public class WtLauncherTests
     }
 
     [Fact]
-    public void BuildEnv_SetsWtSettingsPath()
+    [SupportedOSPlatform("windows")]
+    public void GetFragmentRoot_PointsAtCanonicalLocalAppDataFragmentsDir()
     {
-        var env = WtLauncher.BuildEnv("C:/foo/bar");
-        Assert.Single(env);
-        Assert.Equal("C:/foo/bar", env["WT_SETTINGS_PATH"]);
+        var root = WtLauncher.GetFragmentRoot();
+        var expected = Path.Combine(
+            System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+            "Microsoft", "Windows Terminal", "Fragments");
+        Assert.Equal(expected, root);
     }
 
     [Fact]

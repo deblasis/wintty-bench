@@ -48,31 +48,6 @@ public class LauncherTests
         Assert.Equal("WindowsTerminal", launcher.ExpectedProcessName);
     }
 
-    [Fact]
-    public void WtLauncher_Env_Sets_WT_SETTINGS_PATH()
-    {
-        var tempRoot = "C:\\temp\\wt-bench-x";
-        var env = WtLauncher.BuildEnv(tempRoot);
-
-        Assert.Equal(tempRoot, env["WT_SETTINGS_PATH"]);
-    }
-
-    [Fact]
-    public void WtLauncher_WritesSettingsJson_WithShellCommand()
-    {
-        var tempRoot = Path.Combine(Path.GetTempPath(), "wt-bench-test-" + Guid.NewGuid());
-        try
-        {
-            WtLauncher.WriteSettings(tempRoot, shellCommand: "pwsh -NoLogo", cols: 80, rows: 24);
-            var settingsPath = Path.Combine(tempRoot, "settings.json");
-            Assert.True(File.Exists(settingsPath));
-            var content = File.ReadAllText(settingsPath);
-            Assert.Contains("\"commandline\"", content);
-            Assert.Contains("pwsh -NoLogo", content);
-        }
-        finally
-        {
-            if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, recursive: true);
-        }
-    }
+    // WT settings handoff tests live in Launchers/WtLauncherTests.cs alongside
+    // the rest of the WtLauncher coverage.
 }

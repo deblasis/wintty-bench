@@ -14,8 +14,20 @@ public sealed class WtLauncher : ILauncher
     public LaunchHandle Launch(LaunchRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var configRoot = Path.Combine(Path.GetTempPath(), "wt-bench-" + Guid.NewGuid());
-        WriteSettings(configRoot, request.ShellCommand, request.Cols, request.Rows);
+
+        // Stable fragment dir (NOT per-iter). WT auto-derives a profile
+        // GUID from (source, name); per-iter source dirs caused every
+        // iteration to register a NEW WinttyBenchProfile entry in the
+        // user's settings.json. Old entries persisted as orphans (empty
+        // commandline) and `wt -p WinttyBenchProfile` resolved to one of
+        // them, never to the freshly-written fragment. A single stable
+        // source means exactly one profile entry whose commandline gets
+        // overwritten each iter.
+        var fragmentRoot = GetFragmentRoot();
+        SweepLegacyFragmentsOnce(fragmentRoot);
+
+        var fragmentDir = Path.Combine(fragmentRoot, "wintty-bench");
+        WriteFragment(fragmentDir, request.ShellCommand, request.Cols, request.Rows);
 
         // Use request.TargetExePath, not "wt.exe" -- the latter resolves
         // via PATH to the Store-install wt.exe (App Execution Aliases),
@@ -28,12 +40,6 @@ public sealed class WtLauncher : ILauncher
             Arguments = "-p WinttyBenchProfile",
             UseShellExecute = false,
         };
-        // ProcessStartInfo.Environment is pre-populated with the parent's env;
-        // these entries override-or-add, they do not replace.
-        foreach (var (k, v) in BuildEnv(configRoot))
-        {
-            startInfo.Environment[k] = v;
-        }
 
         // Snapshot which CASCADIA-owning PIDs already exist before we
         // spawn. Reasons it must happen pre-spawn:
@@ -122,51 +128,90 @@ public sealed class WtLauncher : ILauncher
         return new LaunchHandle
         {
             Process = measurable,
-            ConfigRoot = configRoot,
+            ConfigRoot = fragmentDir,
             WindowHandle = hwnd != 0 ? hwnd : null,
             Job = job,
         };
     }
 
-    public static void WriteSettings(string settingsRoot, string shellCommand, int cols, int rows)
+    // Fragments root: %LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\.
+    // Empirically, both Store and unpackaged Windows Terminal load fragments
+    // from this canonical path. WT_SETTINGS_PATH is honored only by Store WT
+    // (and only for the main settings.json, not fragments), which is why an
+    // earlier WT_SETTINGS_PATH-based handoff silently fell through to the
+    // user's existing settings on portable WT.
+    public static string GetFragmentRoot() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Microsoft", "Windows Terminal", "Fragments");
+
+    private static int s_swept;
+
+    private static void SweepLegacyFragmentsOnce(string fragmentRoot)
     {
-        Directory.CreateDirectory(settingsRoot);
-        // Numbers are formatted via InvariantCulture to keep settings.json
+        // Interlocked guard so concurrent first-launches in the same process
+        // only sweep once. The bench is single-threaded today, but the static
+        // is defense-in-depth for future parallel callers.
+        //
+        // Pattern wintty-bench-* (with trailing hyphen) targets only the
+        // legacy GUID-suffixed dirs from an earlier broken iteration; the
+        // current stable dir is plain "wintty-bench" (no hyphen) so it's
+        // not matched.
+        if (Interlocked.Exchange(ref s_swept, 1) != 0) return;
+        try
+        {
+            if (!Directory.Exists(fragmentRoot)) return;
+            foreach (var d in Directory.EnumerateDirectories(fragmentRoot, "wintty-bench-*"))
+            {
+                try { Directory.Delete(d, recursive: true); }
+                catch (IOException) { /* best effort */ }
+                catch (UnauthorizedAccessException) { /* best effort */ }
+            }
+        }
+        catch (IOException) { /* best effort */ }
+        catch (UnauthorizedAccessException) { /* best effort */ }
+    }
+
+    public static void WriteFragment(string fragmentDir, string shellCommand, int cols, int rows)
+    {
+        Directory.CreateDirectory(fragmentDir);
+        // Numbers formatted via InvariantCulture to keep the fragment JSON
         // locale-independent (CA1305). The interpolated handler would
-        // otherwise pick up CurrentCulture and produce e.g. "1 024" on
+        // otherwise pick up CurrentCulture and produce e.g. "1 024" on
         // some locales.
         var colsStr = cols.ToString(CultureInfo.InvariantCulture);
         var rowsStr = rows.ToString(CultureInfo.InvariantCulture);
         // JSON-encode shellCommand so internal " or \ don't malform the
-        // settings.json. JsonSerializer.Serialize on a string returns the
-        // value WITH surrounding quotes, e.g. "bash -c \"x\"" -- embed it
-        // raw into the template (no extra outer quotes). Use the source-
+        // fragment. JsonSerializer.Serialize on a string returns the value
+        // WITH surrounding quotes, e.g. "bash -c \"x\"" -- embed it raw
+        // into the template (no extra outer quotes). Use the source-
         // generated string TypeInfo for AOT/trim safety (IL2026/IL3050).
         var commandlineJson = System.Text.Json.JsonSerializer.Serialize(
             shellCommand, WinttyBench.ResultSchemaContext.Default.String);
+        // Fragment shape differs from settings.json: top-level "profiles"
+        // is an array, not nested under "list", and defaultProfile cannot
+        // be set from a fragment. The bench selects this profile explicitly
+        // via `wt -p WinttyBenchProfile`, so additive merge is sufficient
+        // and non-destructive to the user's existing WT settings.
         var json = $$"""
 {
-  "profiles": {
-    "list": [
-      {
-        "name": "WinttyBenchProfile",
-        "commandline": {{commandlineJson}},
-        "initialCols": {{colsStr}},
-        "initialRows": {{rowsStr}},
-        "closeOnExit": "always",
-        "hidden": false,
-        "startingDirectory": "%USERPROFILE%"
-      }
-    ]
-  },
-  "defaultProfile": "WinttyBenchProfile"
+  "profiles": [
+    {
+      "name": "WinttyBenchProfile",
+      "commandline": {{commandlineJson}},
+      "initialCols": {{colsStr}},
+      "initialRows": {{rowsStr}},
+      "closeOnExit": "always",
+      "hidden": false,
+      "startingDirectory": "%USERPROFILE%"
+    }
+  ]
 }
 """;
-        File.WriteAllText(Path.Combine(settingsRoot, "settings.json"), json);
+        // Filename inside the fragment dir is arbitrary; WT loads any
+        // *.json under Fragments\<source>\. Match the dir name so a stray
+        // fragment is easy to attribute during debugging.
+        var fragmentName = Path.GetFileName(fragmentDir
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        File.WriteAllText(Path.Combine(fragmentDir, fragmentName + ".json"), json);
     }
-
-    public static Dictionary<string, string> BuildEnv(string settingsRoot) => new()
-    {
-        ["WT_SETTINGS_PATH"] = settingsRoot,
-    };
 }
