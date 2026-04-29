@@ -28,6 +28,13 @@ public static class EnvProbe
 
     private static (string sha, string version) ProbeWinttyVersion(string exePath)
     {
+        // Empty path -- caller passed string.Empty when wintty is not in --terminals.
+        // Match the documented "silently degrades to unknown" contract; without this
+        // FileVersionInfo.GetVersionInfo("") throws ArgumentException, which the top
+        // catch reports as an "Arg error:" and masks the real source.
+        if (string.IsNullOrEmpty(exePath))
+            return ("unknown", "unknown");
+
         try
         {
 #pragma warning disable CA1416 // FileVersionInfo is cross-plat but some props are Windows-flavored; this harness is Windows-only.
@@ -41,6 +48,15 @@ public static class EnvProbe
         }
         catch (IOException)
         {
+            return ("unknown", "unknown");
+        }
+        catch (ArgumentException)
+        {
+            // FileVersionInfo.GetVersionInfo also throws ArgumentException on
+            // structurally invalid paths (e.g. embedded \0, illegal chars).
+            // The empty-path case is handled by the early-return above; this
+            // catch keeps the "silently degrade" contract robust against any
+            // future caller that passes a malformed but non-empty string.
             return ("unknown", "unknown");
         }
     }
