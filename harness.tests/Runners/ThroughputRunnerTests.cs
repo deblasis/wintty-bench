@@ -133,4 +133,71 @@ public class ThroughputRunnerTests
             try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
         }
     }
+
+    [Fact]
+    public void BuildShellCommandForCell_Pwsh_QueriesCursorPositionBeforeSentinel()
+    {
+        // Without the cursor-position query the done sentinel can fire before
+        // the terminal has actually rendered the workload (WT does not back-
+        // pressure stdout the way ConPTY does for wintty). Writing CSI 6 n
+        // and reading the reply forces the terminal to parse and render every
+        // preceding byte before responding, so the touch correlates with
+        // "render complete" rather than "stdout buffered."
+        var sentinel = "C:\\Temp\\cursor-query-pwsh.marker";
+        var (_, path) = ThroughputRunner.BuildShellCommandForCell(
+            PwshCell, "C:\\fixtures\\test.txt", sentinel);
+        try
+        {
+            var body = File.ReadAllText(path);
+            var workloadIdx = body.IndexOf("Get-Content", StringComparison.Ordinal);
+            var queryIdx = body.IndexOf("[6n", StringComparison.Ordinal);
+            var readIdx = body.IndexOf("[Console]::Read()", StringComparison.Ordinal);
+            var sentinelIdx = body.IndexOf("New-Item", StringComparison.Ordinal);
+
+            Assert.True(workloadIdx >= 0, "Get-Content workload must be present");
+            Assert.True(queryIdx >= 0, "CSI 6 n cursor-position query must be present");
+            Assert.True(readIdx >= 0, "stdin read of cursor reply must be present");
+            Assert.True(sentinelIdx >= 0, "sentinel touch must be present");
+            Assert.True(workloadIdx < queryIdx, "workload must precede cursor query");
+            Assert.True(queryIdx < readIdx, "cursor query must precede stdin read");
+            Assert.True(readIdx < sentinelIdx, "stdin read must precede sentinel touch");
+        }
+        finally
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
+        }
+    }
+
+    [Fact]
+    public void BuildShellCommandForCell_Wsl_QueriesCursorPositionBeforeSentinel()
+    {
+        var sentinel = "C:\\Temp\\cursor-query-wsl.marker";
+        var (_, path) = ThroughputRunner.BuildShellCommandForCell(
+            WslCell, "/mnt/c/fixtures/test.txt", sentinel);
+        try
+        {
+            var body = File.ReadAllText(path);
+            var workloadIdx = body.IndexOf("cat '", StringComparison.Ordinal);
+            // \033[6n is the bash-printf escape form; the literal "[6n" is
+            // what survives in the script source.
+            var queryIdx = body.IndexOf("[6n", StringComparison.Ordinal);
+            // Pin the exact line that consumes the reply, not just any
+            // "read " token, so a future reformat can't slide an unrelated
+            // command into this assertion's path.
+            var readIdx = body.IndexOf("IFS= read", StringComparison.Ordinal);
+            var sentinelIdx = body.IndexOf("touch '", StringComparison.Ordinal);
+
+            Assert.True(workloadIdx >= 0, "cat workload must be present");
+            Assert.True(queryIdx >= 0, "CSI 6 n cursor-position query must be present");
+            Assert.True(readIdx >= 0, "bash read of cursor reply must be present");
+            Assert.True(sentinelIdx >= 0, "sentinel touch must be present");
+            Assert.True(workloadIdx < queryIdx, "workload must precede cursor query");
+            Assert.True(queryIdx < readIdx, "cursor query must precede stdin read");
+            Assert.True(readIdx < sentinelIdx, "stdin read must precede sentinel touch");
+        }
+        finally
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
+        }
+    }
 }
