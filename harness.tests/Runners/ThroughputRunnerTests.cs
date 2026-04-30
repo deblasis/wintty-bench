@@ -181,7 +181,10 @@ public class ThroughputRunnerTests
             // \033[6n is the bash-printf escape form; the literal "[6n" is
             // what survives in the script source.
             var queryIdx = body.IndexOf("[6n", StringComparison.Ordinal);
-            var readIdx = body.IndexOf("read ", StringComparison.Ordinal);
+            // Pin the exact line that consumes the reply, not just any
+            // "read " token, so a future reformat can't slide an unrelated
+            // command into this assertion's path.
+            var readIdx = body.IndexOf("IFS= read", StringComparison.Ordinal);
             var sentinelIdx = body.IndexOf("touch '", StringComparison.Ordinal);
 
             Assert.True(workloadIdx >= 0, "cat workload must be present");
