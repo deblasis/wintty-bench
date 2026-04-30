@@ -178,6 +178,12 @@ public sealed class ThroughputRunner : IKpiRunner
     {
         var scriptPath = Path.Combine(scriptsDir, scriptStem + ".sh");
         var sentinelWsl = WslPaths.ToWslMountPath(sentinelPath);
+        // Sibling .log file next to the .sh; the runner deletes the script
+        // on iter exit but never touches the log, so it persists for post-
+        // run inspection. Per-iter unique because scriptStem already carries
+        // a Guid suffix, so concurrent or repeated iters never collide.
+        var logPath = Path.Combine(scriptsDir, scriptStem + ".log");
+        var logWsl = WslPaths.ToWslMountPath(logPath);
         // LF line endings: bash under WSL rejects CRLF script lines. The
         // Replace is defensive — string.Create with \n literals never inserts
         // CRLF today, but a future edit that switches to a template file or
@@ -190,8 +196,20 @@ public sealed class ThroughputRunner : IKpiRunner
         // 2>/dev/null tolerates wintty raw-pipe mode where stdin is not a
         // tty and stty errors out; in that mode `read` still works because
         // it just consumes bytes from the pipe.
+        //
+        // Diagnostic capture: stty/read exit codes plus the byte-length of
+        // the consumed response are appended to a sibling .log file. The
+        // hypothesis under WT is that `read -d R` hits EOF (read_exit=1,
+        // resp_len=0) because the WT->wsl.exe->bash stdin chain delivers
+        // nothing for the cursor-position reply, so bash falls through to
+        // the unconditional touch in microseconds. Concrete per-iter numbers
+        // here discriminate that from a working-but-slow wintty case
+        // (read_exit=0, resp_len in single digits). $? is captured into
+        // locals on the line immediately after the command being measured,
+        // because every intervening builtin (including the redirect itself
+        // in some bash versions) can clobber it.
         var body = string.Create(CultureInfo.InvariantCulture,
-            $"cat '{fixtureWslPath}'\nstty -icanon -echo 2>/dev/null\nprintf '\\033[6n'\nIFS= read -rs -d R _resp\ntouch '{sentinelWsl}'\nexit\n");
+            $"cat '{fixtureWslPath}'\nstty -icanon -echo 2>/dev/null\n_stty_exit=$?\nprintf '\\033[6n'\nIFS= read -rs -d R _resp\n_read_exit=$?\nprintf 'ts=%s stty_exit=%s read_exit=%s resp_len=%s\\n' \"$(date +%s.%N)\" \"$_stty_exit\" \"$_read_exit\" \"${{#_resp}}\" >> '{logWsl}'\ntouch '{sentinelWsl}'\nexit\n");
         File.WriteAllText(scriptPath, body.Replace("\r\n", "\n", StringComparison.Ordinal));
         var scriptWsl = WslPaths.ToWslMountPath(scriptPath);
         var command = string.Create(CultureInfo.InvariantCulture,

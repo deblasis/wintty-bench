@@ -203,4 +203,51 @@ public class ThroughputRunnerTests
             try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
         }
     }
+
+    [Fact]
+    public void BuildShellCommandForCell_Wsl_CapturesDiagnosticsToSiblingLog()
+    {
+        // The wsl path is suspected of returning fast under WT because `read
+        // -d R` hits EOF (stdin closed by ConPTY chain) and bash silently
+        // continues to touch the sentinel. The script captures stty exit,
+        // read exit, and the byte-length of the response into a sibling .log
+        // file so a real WT smoke produces concrete evidence per iter. The
+        // log file shares the script's basename and lives next to it; the
+        // runner deletes the .sh on exit but does not touch the .log, so it
+        // persists for post-run inspection.
+        var sentinel = "C:\\Temp\\diag-wsl-sentinel.marker";
+        var (_, path) = ThroughputRunner.BuildShellCommandForCell(
+            WslCell, "/mnt/c/fixtures/test.txt", sentinel);
+        try
+        {
+            var body = File.ReadAllText(path);
+            var expectedLogStem = Path.GetFileNameWithoutExtension(path);
+
+            // The log path inside the script body is in WSL form, but it
+            // must mention the same stem as the .sh on disk so the user can
+            // map "which iter is this log".
+            Assert.Contains(expectedLogStem + ".log", body);
+            // stty exit code captured. The 2>/dev/null hides the stderr
+            // message but not the exit status; record it.
+            Assert.Contains("stty_exit=", body);
+            // read exit code is the smoking gun for the EOF hypothesis.
+            // Bash's read returns >0 on EOF without a delimiter; if WT
+            // closes stdin pre-emptively this prints 1 and the script
+            // falls through.
+            Assert.Contains("read_exit=", body);
+            // Length of what was actually consumed from stdin. 0 = nothing
+            // arrived; non-zero with read_exit=0 = reply parsed correctly.
+            Assert.Contains("resp_len=", body);
+            // Sentinel touch is still the last functional step. Diagnostic
+            // capture must not gate it; an unconditional touch keeps the
+            // runner contract intact.
+            var readIdx = body.IndexOf("IFS= read", StringComparison.Ordinal);
+            var touchIdx = body.IndexOf("touch '", StringComparison.Ordinal);
+            Assert.True(readIdx < touchIdx, "diagnostics must not move the sentinel touch");
+        }
+        finally
+        {
+            try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { }
+        }
+    }
 }
