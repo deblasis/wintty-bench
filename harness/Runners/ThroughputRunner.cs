@@ -11,6 +11,18 @@ namespace WinttyBench.Runners;
 // even with quit-after-last-window-closed=true in config, so the harness
 // drives the lifecycle itself: wait for a sentinel file that the shell
 // script writes on its last line, then stop the clock and kill Wintty.
+//
+// The script issues a CSI 6 n (DSR cursor-position request) AFTER the
+// workload and reads the terminal's reply BEFORE touching the sentinel.
+// A terminal must parse and render every preceding byte to compute the
+// reply, so the touch correlates with "render complete" rather than
+// "stdout buffered." Without this, WT scores ~5,000-30,000x faster than
+// reality because its profile commandline is spawned BEFORE the CASCADIA
+// HWND becomes detectable to WaitForNewWtHwnd, so a fast script can
+// drain its workload into ConPTY's buffer and signal done while Launch
+// is still polling for the window. Wintty doesn't have this problem
+// because its ConPTY back-pressures stdout, but the cursor-query path
+// is a no-op cost there and a correctness fix for WT.
 public sealed class ThroughputRunner : IKpiRunner
 {
     public IReadOnlyList<string> SupportedTerminals { get; } = ["wintty", "wt"];
@@ -138,8 +150,14 @@ public sealed class ThroughputRunner : IKpiRunner
         // %TEMP%-derived sentinel paths; both are apostrophe-free on Windows.
         // If a future cell points at a path containing `'`, this needs `''`
         // doubling to stay literal.
+        //
+        // Backtick-e is the PowerShell 6+ escape literal (0x1B). The reply
+        // from CSI 6 n is `ESC [ <row> ; <col> R`, terminating in 'R' (0x52).
+        // The Read loop tolerates -1 (EOF, terminal closed early) so a hung
+        // iter still falls through to the runner's DefaultExitTimeout instead
+        // of wedging here.
         var body = string.Create(CultureInfo.InvariantCulture,
-            $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
+            $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\n[Console]::Out.Write(\"`e[6n\")\n[Console]::Out.Flush()\nwhile ($true) {{ $c = [Console]::Read(); if ($c -eq -1 -or $c -eq 82) {{ break }} }}\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
         File.WriteAllText(scriptPath, body);
         // -NoProfile skips ~1-2s of profile loading per launch. -NonInteractive
         // guarantees no hidden prompt can wedge the measurement.
@@ -157,8 +175,16 @@ public sealed class ThroughputRunner : IKpiRunner
         // Replace is defensive — string.Create with \n literals never inserts
         // CRLF today, but a future edit that switches to a template file or
         // verbatim string could, and this keeps the invariant loud.
+        //
+        // stty -icanon disables line-buffering so `read -d R` can return on
+        // the 'R' that ends the CSI 6 n reply (\e[<row>;<col>R) instead of
+        // waiting for a newline that never arrives. -echo prevents the reply
+        // bytes from being echoed back to the terminal as visible text. The
+        // 2>/dev/null tolerates wintty raw-pipe mode where stdin is not a
+        // tty and stty errors out; in that mode `read` still works because
+        // it just consumes bytes from the pipe.
         var body = string.Create(CultureInfo.InvariantCulture,
-            $"cat '{fixtureWslPath}'\ntouch '{sentinelWsl}'\nexit\n");
+            $"cat '{fixtureWslPath}'\nstty -icanon -echo 2>/dev/null\nprintf '\\033[6n'\nIFS= read -rs -d R _resp\ntouch '{sentinelWsl}'\nexit\n");
         File.WriteAllText(scriptPath, body.Replace("\r\n", "\n", StringComparison.Ordinal));
         var scriptWsl = WslPaths.ToWslMountPath(scriptPath);
         var command = string.Create(CultureInfo.InvariantCulture,
