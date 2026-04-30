@@ -152,12 +152,19 @@ public sealed class ThroughputRunner : IKpiRunner
         // doubling to stay literal.
         //
         // Backtick-e is the PowerShell 6+ escape literal (0x1B). The reply
-        // from CSI 6 n is `ESC [ <row> ; <col> R`, terminating in 'R' (0x52).
-        // The Read loop tolerates -1 (EOF, terminal closed early) so a hung
-        // iter still falls through to the runner's DefaultExitTimeout instead
-        // of wedging here.
+        // from CSI 6 n is `ESC [ <row> ; <col> R`, terminating in 'R'.
+        //
+        // ReadKey($true) instead of Read() because pwsh's stdin under a
+        // ConPTY-attached terminal is a real console handle in cooked /
+        // line-buffered mode by default -- Read() blocks until newline,
+        // which the cursor reply never sends. ReadKey pulls events out of
+        // the console input buffer directly, bypassing line buffering;
+        // the $true arg suppresses the otherwise-default on-screen echo
+        // of the reply bytes. If the terminal closes early ReadKey throws,
+        // the sentinel never touches, and the runner's DefaultExitTimeout
+        // marks the iter hung -- same end state as a real timeout.
         var body = string.Create(CultureInfo.InvariantCulture,
-            $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\n[Console]::Out.Write(\"`e[6n\")\n[Console]::Out.Flush()\nwhile ($true) {{ $c = [Console]::Read(); if ($c -eq -1 -or $c -eq 82) {{ break }} }}\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
+            $"Get-Content -Raw -LiteralPath '{fixtureAbs}' | Write-Host -NoNewline\n[Console]::Out.Write(\"`e[6n\")\n[Console]::Out.Flush()\nwhile ($true) {{ if ([Console]::ReadKey($true).KeyChar -eq 'R') {{ break }} }}\nNew-Item -ItemType File -Force -Path '{sentinelPath}' | Out-Null\nexit\n");
         File.WriteAllText(scriptPath, body);
         // -NoProfile skips ~1-2s of profile loading per launch. -NonInteractive
         // guarantees no hidden prompt can wedge the measurement.

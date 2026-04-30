@@ -151,7 +151,10 @@ public class ThroughputRunnerTests
             var body = File.ReadAllText(path);
             var workloadIdx = body.IndexOf("Get-Content", StringComparison.Ordinal);
             var queryIdx = body.IndexOf("[6n", StringComparison.Ordinal);
-            var readIdx = body.IndexOf("[Console]::Read()", StringComparison.Ordinal);
+            // ReadKey, not Read, because Read() blocks under cooked-mode
+            // CONIN$ which is what pwsh sees when launched by a real
+            // terminal. See BuildPwshCommand for the rationale.
+            var readIdx = body.IndexOf("[Console]::ReadKey", StringComparison.Ordinal);
             var sentinelIdx = body.IndexOf("New-Item", StringComparison.Ordinal);
 
             Assert.True(workloadIdx >= 0, "Get-Content workload must be present");
